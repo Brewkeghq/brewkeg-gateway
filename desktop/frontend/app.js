@@ -135,7 +135,10 @@ async function check() {
     // and "could not reach brewkeg" is not evidence about the key at all.
     const bad = r.rejected;
     line.className = "checkline" + (bad ? " bad" : r.ok ? "" : " warn");
-    el("apply").disabled = selected().length === 0 || bad;
+    updateButton();
+    // A rejected key locks the button outright — there is nothing to run until
+    // a different key is entered.
+    if (bad) el("apply").disabled = true;
     el("apikey").dataset.verdict = bad ? "rejected" : r.reachable ? "ok" : "unknown";
   } catch (e) {
     showCheck(`Test failed: ${e}`, "bad");
@@ -224,16 +227,43 @@ function selected() {
     .map((t) => t.id);
 }
 
+// connected is what the machine actually has right now, captured before the
+// user touches anything. The button is enabled by *difference* from this, not
+// by how many switches are on: "untoggle everything" is a real, useful action,
+// and a button that disables itself the moment the last switch goes off makes
+// disconnecting the one thing this app cannot do.
+function connected() {
+  return state.targets.filter((t) => t.enabled).map((t) => t.id);
+}
+
+function pendingRemoval() {
+  const on = new Set(connected());
+  return state.targets.filter((t) => on.has(t.id) && !selected().includes(t.id));
+}
+
 function updateButton() {
-  const n = selected().length;
+  const sel = selected();
+  const dropping = pendingRemoval();
   const btn = el("apply");
-  btn.textContent = n === 0 ? "Connect" : `Connect ${n} tool${n === 1 ? "" : "s"}`;
-  btn.disabled = n === 0;
+  const dirty = sel.length !== connected().length || dropping.length > 0;
+
+  if (sel.length === 0 && dropping.length > 0) {
+    btn.textContent = `Disconnect ${dropping.length} tool${dropping.length === 1 ? "" : "s"}`;
+  } else if (sel.length === 0) {
+    btn.textContent = "Connect";
+  } else {
+    btn.textContent = `Connect ${sel.length} tool${sel.length === 1 ? "" : "s"}`;
+  }
+  btn.disabled = !dirty;
 }
 
 async function apply() {
   const key = el("apikey").value.trim();
-  if (!key) {
+  // Disconnecting is the one action that carries no key: once the tools are
+  // pointed away from us, nothing is left to authenticate. Demanding a secret
+  // to undo our own edits would lock out exactly the user whose key expired.
+  const disconnectOnly = selected().length === 0 && pendingRemoval().length > 0;
+  if (!key && !disconnectOnly) {
     say("Paste your API key.", true);
     el("apikey").focus();
     return;
@@ -243,7 +273,7 @@ async function apply() {
   try {
     // The Go side re-checks and refuses a rejected key, so a stale verdict here
     // (or no verdict at all) can never write a bad key into a config.
-    const res = await api.Configure(key, selected(), state.baseUrl, "", "");
+    const res = await api.Configure(key, selected(), state.baseUrl, "", "", "");
     if (!res.ok && !res.results?.length) {
       showCheck(res.message, res.key?.rejected ? "bad" : "warn");
       return;
@@ -312,7 +342,10 @@ function showDocket(r) {
 
     const where = document.createElement("span");
     where.className = "where";
-    where.textContent = res.ok ? (res.manual ? "in-app" : "written") : "";
+    // "written" would be a lie for a disconnect. The docket is the only place
+    // the user sees what actually happened to each file, so it has to say
+    // which direction each one went.
+    where.textContent = res.ok ? (res.manual ? "in-app" : res.removed ? "cleared" : "written") : "";
 
     li.append(mark, body, where);
     lines.appendChild(li);

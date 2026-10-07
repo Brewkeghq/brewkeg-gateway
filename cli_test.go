@@ -183,6 +183,7 @@ func cliSandbox(t *testing.T) string {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("USERPROFILE", home)
+	t.Setenv("BREWKEG_NO_RELAUNCH", "1")
 	t.Setenv("SHELL", "/bin/zsh")
 	for _, d := range []string{".codex", ".claude"} {
 		if err := os.MkdirAll(filepath.Join(home, d), 0o755); err != nil {

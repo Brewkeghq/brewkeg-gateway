@@ -11,10 +11,15 @@ import (
 // Options are the knobs every target shares. Defaults match what the docs
 // publish: base URL https://brewkeg.dev, Responses API for codex.
 type Options struct {
-	BaseURL   string `json:"baseUrl"`
-	APIKey    string `json:"-"`
-	MainModel string `json:"mainModel"`
-	FastModel string `json:"fastModel"`
+	BaseURL string `json:"baseUrl"`
+	APIKey  string `json:"-"`
+	// MainModel is the default, SonnetModel the middle of the lineup, and
+	// FastModel the cheap one. Claude Desktop needs all three: its picker has
+	// fixed per-family slots and shows a slot only when a model resolves to
+	// it, so a two-model lineup silently removes Sonnet from the switcher.
+	MainModel   string `json:"mainModel"`
+	SonnetModel string `json:"sonnetModel"`
+	FastModel   string `json:"fastModel"`
 }
 
 func (o Options) WithDefaults() Options {
@@ -23,6 +28,9 @@ func (o Options) WithDefaults() Options {
 	}
 	if o.MainModel == "" {
 		o.MainModel = "claude-opus-5"
+	}
+	if o.SonnetModel == "" {
+		o.SonnetModel = "claude-sonnet-5"
 	}
 	if o.FastModel == "" {
 		o.FastModel = "claude-haiku-4-5"
@@ -366,6 +374,11 @@ type ApplyResult struct {
 	Error  string   `json:"error,omitempty"`
 	Paths  []string `json:"paths,omitempty"`
 	Manual string   `json:"manual,omitempty"`
+	// Removed means this run took brewkeg *out* of the tool rather than putting
+	// it in. The UI has to say which happened: a user who untoggled a service
+	// and then reads "Configured Claude Code" has been told the opposite of the
+	// truth.
+	Removed bool `json:"removed,omitempty"`
 }
 
 // Apply configures the given target ids inside one backup, and saves it. Either
@@ -402,22 +415,54 @@ func ApplyWithSpec(s Spec, ids []string, opts Options) (*Backup, []ApplyResult, 
 		results = append(results, r)
 	}
 
+	// Anything currently configured that the user just switched *off* comes
+	// back out now, inside the same backup, so one Undo reverts the whole run
+	// rather than half of it.
+	for _, r := range evictTargets(s, wanted(ids), b) {
+		if r.OK {
+			b.Targets = append(b.Targets, r.ID)
+		}
+		results = append(results, r)
+	}
+
 	if err := b.Save(); err != nil {
 		return b, results, err
 	}
 
 	// Remember the key so the next launch opens with it filled in. Only once a
 	// write actually landed — a run that failed everywhere left the machine
-	// untouched, so claiming to know its key would be a lie.
-	if anyOK(results) {
+	// untouched, so claiming to know its key would be a lie. A run that only
+	// *removed* brewkeg did not put a key anywhere either, so it does not count.
+	if anyWritten(results) {
 		_ = StoreKey(opts.APIKey)
 	}
 	return b, results, nil
 }
 
+// wanted is the set of ids this run should leave connected. Anything absent is
+// evicted, so "off" has to be expressible — an empty list is a valid request
+// meaning "disconnect everything", not "do nothing".
+func wanted(ids []string) map[string]bool {
+	m := make(map[string]bool, len(ids))
+	for _, id := range ids {
+		m[id] = true
+	}
+	return m
+}
+
 func anyOK(rs []ApplyResult) bool {
 	for _, r := range rs {
 		if r.OK {
+			return true
+		}
+	}
+	return false
+}
+
+// anyWritten is anyOK minus the removals: "did we put a key into a file".
+func anyWritten(rs []ApplyResult) bool {
+	for _, r := range rs {
+		if r.OK && !r.Removed {
 			return true
 		}
 	}

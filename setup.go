@@ -17,6 +17,7 @@ func runSetup(args []string) int {
 	opts.APIKey = flagValue(args, "--api-key")
 	opts.BaseURL = flagValue(args, "--base-url")
 	opts.MainModel = flagValue(args, "--model")
+	opts.SonnetModel = flagValue(args, "--sonnet-model")
 	opts.FastModel = flagValue(args, "--fast-model")
 
 	// ~/.brewkeg/config.json is the base; flags and prompts override it. This
@@ -54,8 +55,14 @@ func runSetup(args []string) int {
 	} else {
 		idxs := multiSelect("Which services do you want to configure?", items)
 		if len(idxs) == 0 {
-			fmt.Println("\nNothing selected. Nothing changed.")
-			return 1
+			// Selecting nothing is a real request when something is already
+			// connected — it means "turn brewkeg off everywhere". Only a no-op
+			// when there was nothing on to begin with.
+			if !brewkeg.AnyEnabled() {
+				fmt.Println("\nNothing selected. Nothing changed.")
+				return 1
+			}
+			fmt.Println("\nNo services selected — disconnecting everything brewkeg currently points at.")
 		}
 		for _, i := range idxs {
 			picked = append(picked, status[i].ID)
@@ -66,14 +73,18 @@ func runSetup(args []string) int {
 		fmt.Printf("No apiKey in %s. Nothing changed.\n", brewkeg.UserConfigPath())
 		return 1
 	}
-	if opts.APIKey == "" {
+	// Disconnecting needs no credential: once every tool is pointed away from
+	// us there is nothing left to authenticate. Demanding a key to undo our own
+	// changes would strand anyone whose key has just expired.
+	disconnectOnly := len(picked) == 0
+	if opts.APIKey == "" && !disconnectOnly {
 		opts.APIKey = promptSecret("Enter your brewkeg API key (from brewkeg.dev/dashboard)")
 	}
-	if opts.APIKey == "" {
+	if opts.APIKey == "" && !disconnectOnly {
 		fmt.Println("No API key given. Nothing changed.")
 		return 1
 	}
-	if !yes && !looksLikeKey(opts.APIKey) && !confirm("That doesn't look like a brewkeg key. Continue anyway?", false) {
+	if !disconnectOnly && !yes && !looksLikeKey(opts.APIKey) && !confirm("That doesn't look like a brewkeg key. Continue anyway?", false) {
 		fmt.Println("Cancelled. Nothing changed.")
 		return 1
 	}
@@ -87,7 +98,7 @@ func runSetup(args []string) int {
 	// Only a definitive rejection stops the run. "Could not reach brewkeg" is
 	// not a statement about the key, so treating it as one would strand an
 	// offline user — and the old code did exactly that.
-	if !hasFlag(args, "--skip-check") {
+	if !disconnectOnly && !hasFlag(args, "--skip-check") {
 		fmt.Println("\n  Testing your key…")
 		res := brewkeg.CheckKey(context.Background(), brewkeg.BaseURL(), opts.APIKey)
 		fmt.Printf("  %s\n", res.Message)
@@ -120,6 +131,8 @@ func runSetup(args []string) int {
 		switch {
 		case !r.OK:
 			fmt.Fprintf(os.Stderr, "  ✖ %s: %s\n", r.Label, r.Error)
+		case r.Removed:
+			fmt.Printf("  ✔ %s disconnected — brewkeg removed from %s\n", r.Label, strings.Join(r.Paths, " + "))
 		case r.Manual != "":
 			fmt.Printf("  ✔ %s is configured by hand in the app:\n", r.Label)
 			for _, line := range strings.Split(r.Manual, "\n") {

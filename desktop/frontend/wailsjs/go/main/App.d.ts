@@ -7,7 +7,7 @@ export function CheckForUpdate():Promise<main.UpdateInfo>;
 
 export function CheckKey(arg1:string):Promise<brewkeg.KeyCheck>;
 
-export function Configure(arg1:string,arg2:Array<string>,arg3:string,arg4:string,arg5:string):Promise<main.ConfigureResult>;
+export function Configure(arg1:string,arg2:Array<string>,arg3:string,arg4:string,arg5:string,arg6:string):Promise<main.ConfigureResult>;
 
 export function CopyToClipboard(arg1:string):Promise<void>;
 

@@ -87,9 +87,10 @@ type ConfigureResult struct {
 	Relaunched []brewkeg.RelaunchResult `json:"relaunched,omitempty"`
 }
 
-// Configure backs up, then writes the selected targets. The backup is saved
-// before anything is reported as done, so the window can always offer an undo.
-func (a *App) Configure(apiKey string, ids []string, baseURL, mainModel, fastModel string) ConfigureResult {
+// Configure backs up, then writes the selected targets and removes brewkeg from
+// the ones that were deselected. The backup is saved before anything is reported
+// as done, so the window can always offer an undo.
+func (a *App) Configure(apiKey string, ids []string, baseURL, mainModel, sonnetModel, fastModel string) ConfigureResult {
 	apiKey = strings.TrimSpace(apiKey)
 	if apiKey == "" {
 		// The field opens pre-filled from the key store, so an empty box means
@@ -97,11 +98,14 @@ func (a *App) Configure(apiKey string, ids []string, baseURL, mainModel, fastMod
 		// rather than refusing a change that needs no new secret.
 		apiKey = brewkeg.StoredKey()
 	}
-	if apiKey == "" {
+
+	// Turning everything off is a legitimate request — it disconnects the tools
+	// that are currently on. It carries no key with it, because there is
+	// nothing left to authenticate against once every tool is pointed away
+	// from us. Refusing it for want of a key would make "unconfigure" the one
+	// action the app cannot perform.
+	if apiKey == "" && !brewkeg.AnyEnabled() {
 		return ConfigureResult{Message: "Paste your brewkeg API key first."}
-	}
-	if len(ids) == 0 {
-		return ConfigureResult{Message: "Turn on at least one service."}
 	}
 
 	// Never write a key we have been told is bad. A rejected key written into
@@ -112,15 +116,21 @@ func (a *App) Configure(apiKey string, ids []string, baseURL, mainModel, fastMod
 	// "Could not reach brewkeg" is NOT a rejection: it says nothing about the
 	// key, and blocking on it would make the app unusable offline. That case
 	// proceeds with a warning.
-	check := brewkeg.CheckKey(a.context(), brewkeg.BaseURL(), apiKey)
-	if check.Blocked() {
-		return ConfigureResult{Message: check.Message + " Nothing was changed.", Key: check}
+	var check brewkeg.KeyCheck
+	if apiKey != "" {
+		check = brewkeg.CheckKey(a.context(), brewkeg.BaseURL(), apiKey)
+		if check.Blocked() {
+			return ConfigureResult{Message: check.Message + " Nothing was changed.", Key: check}
+		}
 	}
 
-	opts := brewkeg.Options{APIKey: apiKey, BaseURL: baseURL, MainModel: mainModel, FastModel: fastModel}
+	opts := brewkeg.Options{APIKey: apiKey, BaseURL: baseURL, MainModel: mainModel, SonnetModel: sonnetModel, FastModel: fastModel}
 	b, results, err := brewkeg.Apply(ids, opts)
 	out := ConfigureResult{BackupID: b.ID, BackupDir: brewkeg.BackupDir(b.ID), Results: results, Key: check}
-	if !check.Reachable {
+	// Only warn about an untested key when there was a key to test. A pure
+	// disconnect has no credential in it, so an unreachable gateway is not
+	// something the user needs to be told about.
+	if apiKey != "" && !check.Reachable {
 		out.Warning = "Could not test the key — brewkeg did not answer. Saved anyway."
 	}
 	if err != nil {
@@ -129,9 +139,12 @@ func (a *App) Configure(apiKey string, ids []string, baseURL, mainModel, fastMod
 	}
 
 	failed := 0
+	added := 0
 	for _, r := range results {
 		if !r.OK {
 			failed++
+		} else if !r.Removed {
+			added++
 		}
 	}
 	if failed == len(results) {
@@ -150,15 +163,48 @@ func (a *App) Configure(apiKey string, ids []string, baseURL, mainModel, fastMod
 
 	// Now do it rather than printing a list of things the user will forget to
 	// do. Only apps that were already running are touched.
-	out.Relaunched = brewkeg.Relaunch(brewkeg.RestartAppsFor(ids), 8*time.Second)
+	out.Relaunched = brewkeg.Relaunch(brewkeg.RestartAppsFor(allTouched(ids, results)), 8*time.Second)
 
-	n := len(results) - failed
-	if failed > 0 {
-		out.Message = fmt.Sprintf("Configured %d of %d services. %d failed — see details.", n, len(results), failed)
-	} else {
-		out.Message = fmt.Sprintf("Configured %s. A backup was saved first.", plural(n))
+	out.Message = summary(added, len(results)-added-failed, failed)
+	return out
+}
+
+// allTouched is the ids a run actually changed, both directions. Restart hints
+// and relaunch have to cover the tools we just disconnected too — a config is
+// read at startup, so a stale Claude Code session keeps using brewkeg long
+// after the file says otherwise.
+func allTouched(ids []string, results []brewkeg.ApplyResult) []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, id := range ids {
+		if !seen[id] {
+			seen[id] = true
+			out = append(out, id)
+		}
+	}
+	for _, r := range results {
+		if r.OK && !seen[r.ID] {
+			seen[r.ID] = true
+			out = append(out, r.ID)
+		}
 	}
 	return out
+}
+
+// summary says what happened, in the order a reader cares: what was connected,
+// what was disconnected, what failed.
+func summary(added, removed, failed int) string {
+	var parts []string
+	if added > 0 {
+		parts = append(parts, fmt.Sprintf("Connected %s", plural(added)))
+	}
+	if removed > 0 {
+		parts = append(parts, fmt.Sprintf("Disconnected %s", plural(removed)))
+	}
+	if failed > 0 {
+		parts = append(parts, fmt.Sprintf("%d failed — see details", failed))
+	}
+	return strings.Join(parts, ". ") + ". A backup was saved first."
 }
 
 func plural(n int) string {

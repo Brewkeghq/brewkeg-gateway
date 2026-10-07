@@ -89,6 +89,11 @@ installed app backwards.
 A pre-existing `model_provider = "openai"` is commented out rather than deleted,
 so the change is visible and reversible.
 
+Every target above is a file we read, merge into surgically, back up first, and can
+restore byte-exact. Tools that don't offer that surface are not written to — see
+[docs/unsupported-targets.md](docs/unsupported-targets.md) for why Cursor and
+Antigravity are not targets, and what would unblock each.
+
 ## Restore is the contract
 
 Before the first write, every touched file is copied to

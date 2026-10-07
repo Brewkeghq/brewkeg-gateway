@@ -10,8 +10,8 @@ export function CheckKey(arg1) {
   return window['go']['main']['App']['CheckKey'](arg1);
 }
 
-export function Configure(arg1, arg2, arg3, arg4, arg5) {
-  return window['go']['main']['App']['Configure'](arg1, arg2, arg3, arg4, arg5);
+export function Configure(arg1, arg2, arg3, arg4, arg5, arg6) {
+  return window['go']['main']['App']['Configure'](arg1, arg2, arg3, arg4, arg5, arg6);
 }
 
 export function CopyToClipboard(arg1) {

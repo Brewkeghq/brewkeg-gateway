@@ -26,6 +26,7 @@ func sandbox(t *testing.T) string {
 		_, _ = w.Write([]byte(`{"id":"msg_1"}`))
 	}))
 	t.Cleanup(srv.Close)
+	t.Setenv("BREWKEG_NO_RELAUNCH", "1")
 	t.Setenv("BREWKEG_BASE_URL", srv.URL)
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -55,7 +56,7 @@ func TestConfigureThenRestoreIsByteExact(t *testing.T) {
 		t.Fatalf("expected 3 targets, got %d", len(state.Targets))
 	}
 
-	res := app.Configure("bk_live_testkey123", []string{"claude-cli", "codex"}, state.BaseURL, "", "")
+	res := app.Configure("bk_live_testkey123", []string{"claude-cli", "codex"}, state.BaseURL, "", "", "")
 	if !res.OK {
 		t.Fatalf("configure failed: %s (%v)", res.Message, res.Results)
 	}
@@ -90,18 +91,83 @@ func TestConfigureThenRestoreIsByteExact(t *testing.T) {
 func TestConfigureRefusesWithoutKey(t *testing.T) {
 	sandbox(t)
 	app := NewApp()
-	res := app.Configure("   ", []string{"codex"}, "https://brewkeg.dev", "", "")
+	res := app.Configure("   ", []string{"codex"}, "https://brewkeg.dev", "", "", "")
 	if res.OK || res.Message == "" {
 		t.Fatal("a blank key must be refused with a message the window can show")
 	}
 }
 
-func TestConfigureRefusesWithNothingSelected(t *testing.T) {
+// "Select nothing" used to be refused outright. It is not a dead button any
+// more: when something is connected it is the disconnect action, and when
+// nothing is there is still refused rather than claiming to have done something.
+func TestConfigureRefusesWithNothingSelectedAndNothingConnected(t *testing.T) {
 	sandbox(t)
 	app := NewApp()
-	res := app.Configure("bk_live_testkey123", nil, "https://brewkeg.dev", "", "")
+	res := app.Configure("bk_live_testkey123", nil, "https://brewkeg.dev", "", "", "")
 	if res.OK || res.Message == "" {
-		t.Fatal("selecting no services must be refused, not silently succeed")
+		t.Fatal("selecting no services on a clean machine must be refused, not silently succeed")
+	}
+}
+
+// The contract the user asked for: untoggle a tool, press the button, and its
+// config is cleared. Previously this returned "Turn on at least one service",
+// which made unconfiguring the one thing the window could not do.
+func TestConfigureWithNothingSelectedEvictsWhatWasOn(t *testing.T) {
+	home := sandbox(t)
+	app := NewApp()
+
+	if res := app.Configure("bk_live_testkey123", []string{"claude-cli"}, "https://brewkeg.dev", "", "", ""); !res.OK {
+		t.Fatal(res.Message)
+	}
+	settings := filepath.Join(home, ".claude", "settings.json")
+	if !strings.Contains(brewkeg.ReadFile(settings), "ANTHROPIC_BASE_URL") {
+		t.Fatal("first run did not configure anything to evict")
+	}
+
+	res := app.Configure("bk_live_testkey123", nil, "https://brewkeg.dev", "", "", "")
+	if !res.OK {
+		t.Fatalf("disconnecting must be possible: %s", res.Message)
+	}
+	if got := brewkeg.ReadFile(settings); strings.Contains(got, "ANTHROPIC_BASE_URL") || strings.Contains(got, "bk_live_") {
+		t.Fatalf("brewkeg survived the disconnect:\n%s", got)
+	}
+	if got := brewkeg.ReadFile(settings); !strings.Contains(got, "theme") {
+		t.Fatalf("evict destroyed something that is not ours:\n%s", got)
+	}
+	if !strings.Contains(res.Message, "Disconnect") {
+		t.Fatalf("the window would tell the user the wrong direction: %q", res.Message)
+	}
+
+	for _, tg := range app.GetState().Targets {
+		if tg.Enabled {
+			t.Fatalf("%s still reports as enabled after a disconnect", tg.ID)
+		}
+	}
+}
+
+// Disconnecting must not require a key. Once every tool is pointed away from us
+// there is nothing left to authenticate, and demanding a secret to undo our own
+// edits locks out exactly the user whose key has just expired.
+func TestConfigureDisconnectsWithNoKeyAtAll(t *testing.T) {
+	home := sandbox(t)
+	app := NewApp()
+
+	if res := app.Configure("bk_live_testkey123", []string{"claude-cli"}, "https://brewkeg.dev", "", "", ""); !res.OK {
+		t.Fatal(res.Message)
+	}
+	if err := os.Remove(filepath.Join(home, ".brewkeg", "key")); err != nil {
+		t.Fatalf("could not clear the key store: %v", err)
+	}
+
+	res := app.Configure("", nil, "https://brewkeg.dev", "", "", "")
+	if !res.OK {
+		t.Fatalf("disconnect must not be gated on a key: %s", res.Message)
+	}
+	if got := brewkeg.ReadFile(filepath.Join(home, ".claude", "settings.json")); strings.Contains(got, "bk_live_") {
+		t.Fatalf("key still in the config after a keyless disconnect:\n%s", got)
+	}
+	if res.Warning != "" {
+		t.Fatalf("a keyless disconnect has no untested key to warn about: %q", res.Warning)
 	}
 }
 
@@ -117,7 +183,7 @@ func TestDesktopWritesDevToolsSwitchButStillPrintsGatewaySteps(t *testing.T) {
 	}
 
 	app := NewApp()
-	res := app.Configure("bk_live_testkey123", []string{"desktop"}, "https://brewkeg.dev", "", "")
+	res := app.Configure("bk_live_testkey123", []string{"desktop"}, "https://brewkeg.dev", "", "", "")
 	if !res.OK {
 		t.Fatalf("desktop should succeed: %s", res.Message)
 	}
@@ -157,7 +223,7 @@ func TestDesktopDevToolsMergeIsSurgical(t *testing.T) {
 	}
 
 	app := NewApp()
-	if res := app.Configure("bk_live_testkey123", []string{"desktop"}, "https://brewkeg.dev", "", ""); !res.OK {
+	if res := app.Configure("bk_live_testkey123", []string{"desktop"}, "https://brewkeg.dev", "", "", ""); !res.OK {
 		t.Fatal(res.Message)
 	}
 
@@ -238,7 +304,7 @@ func TestDesktopPathIsCorrectPerOS(t *testing.T) {
 func TestGetStateReportsEnabledAfterConfigure(t *testing.T) {
 	sandbox(t)
 	app := NewApp()
-	if res := app.Configure("bk_live_testkey123", []string{"claude-cli"}, "https://brewkeg.dev", "", ""); !res.OK {
+	if res := app.Configure("bk_live_testkey123", []string{"claude-cli"}, "https://brewkeg.dev", "", "", ""); !res.OK {
 		t.Fatal(res.Message)
 	}
 	state := app.GetState()
@@ -263,7 +329,7 @@ func TestGetStateReturnsTheStoredKey(t *testing.T) {
 	}
 
 	const key = "bk_live_prefill_4242"
-	if res := app.Configure(key, []string{"claude-cli"}, "https://brewkeg.dev", "", ""); !res.OK {
+	if res := app.Configure(key, []string{"claude-cli"}, "https://brewkeg.dev", "", "", ""); !res.OK {
 		t.Fatal(res.Message)
 	}
 
@@ -286,7 +352,7 @@ func TestPrefillWorksForCodexOnly(t *testing.T) {
 	app := NewApp()
 
 	const key = "bk_live_codex_prefill_77"
-	if res := app.Configure(key, []string{"codex"}, "https://brewkeg.dev", "", ""); !res.OK {
+	if res := app.Configure(key, []string{"codex"}, "https://brewkeg.dev", "", "", ""); !res.OK {
 		t.Fatal(res.Message)
 	}
 	if st := app.GetState(); st.ApiKey != key {
@@ -301,11 +367,11 @@ func TestConfigureFallsBackToTheStoredKey(t *testing.T) {
 	app := NewApp()
 
 	const key = "bk_live_fallback_3131"
-	if res := app.Configure(key, []string{"claude-cli"}, "https://brewkeg.dev", "", ""); !res.OK {
+	if res := app.Configure(key, []string{"claude-cli"}, "https://brewkeg.dev", "", "", ""); !res.OK {
 		t.Fatal(res.Message)
 	}
 	// Pretend the user cleared the field and hit the button again.
-	res := app.Configure("", []string{"claude-cli"}, "https://brewkeg.dev", "", "")
+	res := app.Configure("", []string{"claude-cli"}, "https://brewkeg.dev", "", "", "")
 	if !res.OK {
 		t.Fatalf("empty field should fall back to the stored key, got: %s", res.Message)
 	}
@@ -340,7 +406,7 @@ func TestRejectedKeyWritesNothing(t *testing.T) {
 	t.Setenv("BREWKEG_BASE_URL", srv.URL)
 
 	app := NewApp()
-	res := app.Configure("bk_live_definitely_wrong", []string{"claude-cli", "codex"}, srv.URL, "", "")
+	res := app.Configure("bk_live_definitely_wrong", []string{"claude-cli", "codex"}, srv.URL, "", "", "")
 
 	if res.OK {
 		t.Fatal("a rejected key must not be allowed to save")
@@ -374,7 +440,7 @@ func TestUnreachableGatewayStillWrites(t *testing.T) {
 	t.Setenv("BREWKEG_BASE_URL", url)
 	app := NewApp()
 
-	res := app.Configure("bk_live_untested", []string{"codex"}, url, "", "")
+	res := app.Configure("bk_live_untested", []string{"codex"}, url, "", "", "")
 	if !res.OK {
 		t.Fatalf("an outage must not block setup: %s", res.Message)
 	}
@@ -399,7 +465,7 @@ func TestOutOfQuotaKeyIsStillWritten(t *testing.T) {
 	t.Setenv("BREWKEG_BASE_URL", srv.URL)
 
 	app := NewApp()
-	res := app.Configure("bk_live_valid_nocredit", []string{"codex"}, srv.URL, "", "")
+	res := app.Configure("bk_live_valid_nocredit", []string{"codex"}, srv.URL, "", "", "")
 	if !res.OK {
 		t.Fatalf("a valid key with no quota should still save: %s", res.Message)
 	}

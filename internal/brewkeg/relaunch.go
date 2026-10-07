@@ -1,6 +1,7 @@
 package brewkeg
 
 import (
+	"os"
 	"os/exec"
 	"runtime"
 	"strings"
@@ -43,6 +44,12 @@ type RelaunchResult struct {
 // is worth more than a faster restart, so a slow quit is reported rather than
 // escalated.
 func Relaunch(apps []RelaunchApp, quitWait time.Duration) []RelaunchResult {
+	// A test run must not quit the developer's Claude Desktop. The suite calls
+	// the same Configure the window does, so the guard belongs here rather than
+	// at the call site, where the next caller would forget it.
+	if os.Getenv("BREWKEG_NO_RELAUNCH") != "" {
+		return nil
+	}
 	out := make([]RelaunchResult, 0, len(apps))
 	for _, a := range apps {
 		out = append(out, relaunchOne(a, quitWait))

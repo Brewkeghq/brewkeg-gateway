@@ -139,3 +139,74 @@ func TestGatewayMergeKeepsTheUsersProfile(t *testing.T) {
 }
 
 func jsonUnmarshalForTest(raw string, v any) error { return json.Unmarshal([]byte(raw), v) }
+
+// Claude Desktop's picker is not a free list. It has one fixed slot per family
+// — sonnet, opus, haiku, fable, mythos — and shows a slot only when a model in
+// inferenceModels resolves to it. So a lineup that simply omits sonnet does not
+// error: the user's switcher quietly loses a row and they have no way to tell
+// why. The lineup therefore has to be asserted as a whole.
+func TestDesktopLineupCoversEveryFamilyThePickerOffers(t *testing.T) {
+	withTempHome(t)
+	write3pProfile(t, "p1", `{"inferenceProvider":"anthropic"}`)
+	path := ClaudeDesktopAppliedConfig()
+
+	o := Options{
+		APIKey:      "bk_live_x",
+		BaseURL:     "https://brewkeg.dev",
+		MainModel:   "claude-opus-5",
+		SonnetModel: "claude-sonnet-5",
+		FastModel:   "claude-haiku-4-5",
+	}
+
+	var spec Spec
+	for _, ts := range DefaultSpec().Targets {
+		if ts.ID == "desktop" && ts.Files[0].Kind == "desktop-3p" {
+			spec = Spec{Targets: []TargetSpec{ts}}
+		}
+	}
+	if len(spec.Targets) != 1 {
+		t.Fatal("no desktop-3p target in the built-in spec")
+	}
+
+	if err := writeJSONPlain(path, spec.Targets[0].Files[0].Entries, o); err != nil {
+		t.Fatal(err)
+	}
+
+	var doc map[string]any
+	if err := json.Unmarshal([]byte(ReadFile(path)), &doc); err != nil {
+		t.Fatal(err)
+	}
+	models, ok := doc["inferenceModels"].([]any)
+	if !ok {
+		t.Fatalf("inferenceModels is not an array: %#v", doc["inferenceModels"])
+	}
+
+	families := map[string]bool{}
+	for _, m := range models {
+		id, _ := m.(string)
+		for _, f := range []string{"opus", "sonnet", "haiku"} {
+			if strings.Contains(id, f) {
+				families[f] = true
+			}
+		}
+	}
+	for _, f := range []string{"opus", "sonnet", "haiku"} {
+		if !families[f] {
+			t.Errorf("no %s model in the lineup %v — its slot will be missing from the picker", f, models)
+		}
+	}
+}
+
+// An empty Options must still produce a complete lineup; the defaults are the
+// engine's job, not the caller's.
+func TestLineupDefaultsToAllThree(t *testing.T) {
+	withTempHome(t)
+	write3pProfile(t, "p1", `{}`)
+	o := Options{}.WithDefaults()
+	if o.MainModel == "" || o.SonnetModel == "" || o.FastModel == "" {
+		t.Fatalf("a default lineup has a hole: %+v", o)
+	}
+	if o.MainModel == o.SonnetModel || o.SonnetModel == o.FastModel || o.MainModel == o.FastModel {
+		t.Errorf("defaults collapsed: main=%q sonnet=%q fast=%q", o.MainModel, o.SonnetModel, o.FastModel)
+	}
+}

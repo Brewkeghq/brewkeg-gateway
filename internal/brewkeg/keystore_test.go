@@ -14,6 +14,7 @@ func withTempHome(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("HOME", dir)
 	t.Setenv("USERPROFILE", dir) // Windows
+	t.Setenv("BREWKEG_NO_RELAUNCH", "1")
 	t.Setenv("BREWKEG_BASE_URL", "https://brewkeg.test")
 }
 

@@ -18,11 +18,14 @@ func UserConfigPath() string { return filepath.Join(brewkegHome(), "config.json"
 // UserConfig is what a person wrote down once, by hand or by a provisioning
 // script, so later runs need no input.
 type UserConfig struct {
-	APIKey    string   `json:"apiKey,omitempty"`
-	Targets   []string `json:"targets,omitempty"`
-	BaseURL   string   `json:"baseUrl,omitempty"`
-	Model     string   `json:"model,omitempty"`
-	FastModel string   `json:"fastModel,omitempty"`
+	APIKey  string   `json:"apiKey,omitempty"`
+	Targets []string `json:"targets,omitempty"`
+	BaseURL string   `json:"baseUrl,omitempty"`
+	Model   string   `json:"model,omitempty"`
+	// SonnetModel is the middle of the lineup. Optional: when it is absent,
+	// the engine fills in the default rather than dropping the family.
+	SonnetModel string `json:"sonnetModel,omitempty"`
+	FastModel   string `json:"fastModel,omitempty"`
 }
 
 // LoadUserConfig reads the config file. A missing or unreadable file is not an
@@ -68,6 +71,9 @@ func (c UserConfig) Resolve(o Options) Options {
 	}
 	if out.MainModel == "" {
 		out.MainModel = c.Model
+	}
+	if out.SonnetModel == "" {
+		out.SonnetModel = c.SonnetModel
 	}
 	if out.FastModel == "" {
 		out.FastModel = c.FastModel

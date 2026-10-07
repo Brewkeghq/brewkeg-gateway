@@ -56,7 +56,7 @@ func TestHeadlessAndWindowProduceIdenticalConfig(t *testing.T) {
 	homeWindow := sandbox(t)
 	gateway := os.Getenv("BREWKEG_BASE_URL")
 	app := NewApp()
-	if res := app.Configure(key, []string{"codex"}, gateway, "", ""); !res.OK {
+	if res := app.Configure(key, []string{"codex"}, gateway, "", "", ""); !res.OK {
 		t.Fatal(res.Message)
 	}
 	windowToml := readFileString(t, filepath.Join(homeWindow, ".codex", "config.toml"))

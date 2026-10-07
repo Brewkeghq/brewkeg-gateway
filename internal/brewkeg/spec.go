@@ -114,11 +114,12 @@ type KVSpec struct {
 
 // Placeholders available inside a spec value.
 const (
-	phBaseURL   = "{{baseUrl}}"
-	phBaseURLV1 = "{{baseUrlV1}}"
-	phAPIKey    = "{{apiKey}}"
-	phMainModel = "{{mainModel}}"
-	phFastModel = "{{fastModel}}"
+	phBaseURL     = "{{baseUrl}}"
+	phBaseURLV1   = "{{baseUrlV1}}"
+	phAPIKey      = "{{apiKey}}"
+	phMainModel   = "{{mainModel}}"
+	phSonnetModel = "{{sonnetModel}}"
+	phFastModel   = "{{fastModel}}"
 )
 
 func expand(v string, o Options) string {
@@ -127,6 +128,7 @@ func expand(v string, o Options) string {
 		phBaseURLV1, strings.TrimRight(o.BaseURL, "/")+"/v1",
 		phAPIKey, o.APIKey,
 		phMainModel, o.MainModel,
+		phSonnetModel, o.SonnetModel,
 		phFastModel, o.FastModel,
 	).Replace(v)
 }
@@ -204,7 +206,7 @@ func DefaultSpec() Spec {
 						// the connection test meaningful, and discovery on a
 						// gateway can return ids the account cannot use.
 						{Name: "modelDiscoveryEnabled", Value: "false"},
-						{Name: "inferenceModels", Value: `["{{mainModel}}","{{fastModel}}"]`},
+						{Name: "inferenceModels", Value: `["{{mainModel}}","{{sonnetModel}}","{{fastModel}}"]`},
 					},
 				}, {
 					// The support directory differs per OS. Paths are all
@@ -293,11 +295,23 @@ func DefaultPickers() map[string]ModelPickerSpec {
 	}
 }
 
-// claudeEnvEntries are the four variables that point Claude Code at brewkeg.
+// claudeEnvEntries are the variables that point Claude Code at brewkeg.
+//
+// ANTHROPIC_DEFAULT_MODEL is the one people miss. Claude Code's model picker
+// keeps a "Default" row no matter what replaceBuiltInOptions says — the rows it
+// drops are only those whose value is set — and that row renders "Use the
+// default model (currently X)". X comes from ANTHROPIC_DEFAULT_MODEL, not from
+// ANTHROPIC_MODEL, so with only the latter set the picker advertises Anthropic's
+// own default (Opus 5.5) — a model brewkeg does not serve. Verified against
+// 2.1.293 in a clean HOME: with neither set the request goes to
+// claude-opus-5-5; setting this one in settings.json moves it to ours.
+// ANTHROPIC_MODEL still wins for the actual request, so both carry the same
+// value and the row and the request can never disagree.
 func claudeEnvEntries() []KVSpec {
 	return []KVSpec{
 		{Name: "ANTHROPIC_BASE_URL", Value: `"{{baseUrl}}"`},
 		{Name: "ANTHROPIC_AUTH_TOKEN", Value: `"{{apiKey}}"`},
+		{Name: "ANTHROPIC_DEFAULT_MODEL", Value: `"{{mainModel}}"`},
 		{Name: "ANTHROPIC_MODEL", Value: `"{{mainModel}}"`},
 		{Name: "ANTHROPIC_SMALL_FAST_MODEL", Value: `"{{fastModel}}"`},
 	}

@@ -107,9 +107,9 @@ main { padding: 26px 22px 24px; }
 
 /* The keg does what the lime rule used to do — say which product this is
    before a word is read — and says it as the actual brand rather than as an
-   abstract bar. It is kept at 22px and no larger: the full keg illustration
-   loses its silhouette under about 28px, which is why icons/brewkeg.svg keeps
-   only the barrel, the band and the </>. */
+   abstract bar. 28px is the floor: below about 24px the foam and the </> band
+   stop reading and it turns into a green smudge. icons/brewkeg.png is the real
+   asset from web2/public/brand/icon-transparent.png, downscaled to 128px. */
 .brand {
   margin: 0 0 13px;
   display: flex;
@@ -119,9 +119,10 @@ main { padding: 26px 22px 24px; }
   font-size: 11px;
   letter-spacing: 0.02em;
 }
+/* The real brewkeg keg mark (web2/public/brand/icon-transparent.png, downscaled). */
 .brand-mark {
-  width: 22px;
-  height: 22px;
+  width: 28px;
+  height: 28px;
   display: block;
   flex: none;
 }

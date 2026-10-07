@@ -285,8 +285,13 @@ func TestSpecUsesTheNamesTheServerSends(t *testing.T) {
 				t.Errorf("gateway entry %s = %s, want %s", k, got[k], v)
 			}
 		}
-		if got["inferenceModels"] != `["{{mainModel}}","{{fastModel}}"]` {
-			t.Errorf("inferenceModels = %s", got["inferenceModels"])
+		// All three families. Claude Desktop's picker has one fixed slot per
+		// family and shows a slot only when a model resolves to it, so a
+		// two-model lineup silently deletes the Sonnet row from the user's
+		// switcher instead of failing loudly.
+		wantLineup := `["{{mainModel}}","{{sonnetModel}}","{{fastModel}}"]`
+		if got["inferenceModels"] != wantLineup {
+			t.Errorf("inferenceModels = %s, want %s", got["inferenceModels"], wantLineup)
 		}
 
 		// The developer-mode switch.
@@ -324,6 +329,62 @@ func TestTypedValueKeepsJSONTypes(t *testing.T) {
 	for _, tc := range cases {
 		if got := typedValue(tc.in); got != tc.want {
 			t.Errorf("typedValue(%q) = %#v, want %#v", tc.in, got, tc.want)
+		}
+	}
+}
+
+// The "Default" row of Claude Code's picker is not removable: with
+// replaceBuiltInOptions it keeps every row whose value is null, which is exactly
+// that one. It renders "currently X" from ANTHROPIC_DEFAULT_MODEL, so if we do
+// not set it the picker advertises Anthropic's own default — Opus 5.5, a model
+// brewkeg does not serve, verified against 2.1.293 in a clean HOME.
+func TestClaudeDefaultRowPointsAtAModelWeServe(t *testing.T) {
+	withTempHome(t)
+
+	entries := claudeEnvEntries()
+	byName := map[string]string{}
+	for _, e := range entries {
+		byName[e.Name] = e.Value
+	}
+
+	def, ok := byName["ANTHROPIC_DEFAULT_MODEL"]
+	if !ok {
+		t.Fatal("ANTHROPIC_DEFAULT_MODEL is not written; the Default row will advertise a model we do not serve")
+	}
+	main, ok := byName["ANTHROPIC_MODEL"]
+	if !ok {
+		t.Fatal("ANTHROPIC_MODEL is not written")
+	}
+
+	o := Options{APIKey: "k", BaseURL: "https://brewkeg.dev", MainModel: "claude-opus-5", FastModel: "claude-haiku-4-5"}
+	if got := unquote(expand(def, o)); got != "claude-opus-5" {
+		t.Errorf("ANTHROPIC_DEFAULT_MODEL = %q, want the main model", got)
+	}
+	// ANTHROPIC_MODEL wins for the actual request, so the two must agree or the
+	// row advertises one model while the session silently runs another.
+	if got := unquote(expand(main, o)); got != unquote(expand(def, o)) {
+		t.Errorf("ANTHROPIC_MODEL = %q but ANTHROPIC_DEFAULT_MODEL = %q; the picker would disagree with the request",
+			got, unquote(expand(def, o)))
+	}
+
+	// And it must be a real catalog id, not a typed-from-memory one.
+	if !strings.Contains(expand(def, o), o.MainModel) {
+		t.Errorf("default model %q is not the main model %q", def, o.MainModel)
+	}
+}
+
+// The spec shape test pins the wire names, so a rename on either side shows up
+// there. This one exists because the failure mode is silent: the app works, the
+// picker just lies about which model is the default.
+func TestTheUnsupportedOpus55IsNeverWritten(t *testing.T) {
+	withTempHome(t)
+	o := Options{APIKey: "k", BaseURL: "https://brewkeg.dev", MainModel: "claude-opus-5", FastModel: "claude-haiku-4-5"}
+	for _, e := range claudeEnvEntries() {
+		got := expand(e.Value, o)
+		for _, bad := range []string{"opus-5-5", "5-5", "5.5"} {
+			if strings.Contains(got, bad) {
+				t.Errorf("entry %s = %q contains %q, a model brewkeg does not serve", e.Name, got, bad)
+			}
 		}
 	}
 }

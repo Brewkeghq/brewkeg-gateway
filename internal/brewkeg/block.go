@@ -16,6 +16,11 @@ const (
 	RootBlockEnd   = "# <<< brewkeg root <<<"
 )
 
+// replacedPrefix marks a foreign value we commented out rather than deleted,
+// so the user can see it and put it back. Every copy is kept deliberately; what
+// must never happen is commenting the same line twice.
+const replacedPrefix = "# brewkeg replaced:"
+
 var anyBlockRe = regexp.MustCompile(`(?ms)^# >>> brewkeg(?: root)? >>>\n.*?^# <<< brewkeg(?: root)? <<<\n?`)
 
 // ApplyBlock inserts or replaces a marked block. Idempotent: running setup
@@ -51,8 +56,13 @@ func HasBlock(content string) bool { return anyBlockRe.MatchString(content) }
 func SetRootKey(content, key, value string) string {
 	re := regexp.MustCompile(`(?m)^\s*` + regexp.QuoteMeta(key) + `\s*=`)
 	kv := key + " = " + value
-	block := RootBlockBegin + "\n" + kv + "\n" + RootBlockEnd + "\n"
 
+	// Start from a clean slate. A previous run of an older build may have left
+	// half a block behind — an end marker with no begin marker, or the value we
+	// wrote still sitting outside any block — and appending to that state is
+	// how twelve copies of "# brewkeg replaced:" ended up in one file. Every
+	// trace of us in the root region goes first; then exactly one block goes
+	// back in.
 	lines := strings.Split(content, "\n")
 	firstTable := len(lines)
 	for i, l := range lines {
@@ -63,37 +73,74 @@ func SetRootKey(content, key, value string) string {
 	}
 	head, tail := lines[:firstTable], lines[firstTable:]
 
-	// Comment out a foreign value for this key in the root region.
+	// Drop the whole marked block, markers *and* the line between them.
+	// Removing only the markers leaves our own assignment behind as an
+	// apparently-live value, and the next run then comments that out — which is
+	// how the replacement comment kept multiplying.
+	var kept []string
+	inBlock := false
+	for _, l := range head {
+		t := strings.TrimSpace(l)
+		if t == RootBlockBegin {
+			inBlock = true
+			continue
+		}
+		if inBlock {
+			if t == RootBlockEnd {
+				inBlock = false
+			}
+			continue
+		}
+		// A foreign value we commented out on an earlier run stays: it is the
+		// user's setting, kept visible and reversible. But a copy that records
+		// the value we are writing right now is our own residue from the bug
+		// this function is fixing — it preserves nothing, so it goes.
+		if t := strings.TrimSpace(l); strings.HasPrefix(t, replacedPrefix) {
+			rest := strings.TrimSpace(strings.TrimPrefix(t, replacedPrefix))
+			if eq := strings.TrimSpace(strings.SplitN(rest, "=", 2)[1]); eq == value {
+				continue
+			}
+		}
+		kept = append(kept, l)
+	}
+	head = kept
+
+	// A file can also be left with an orphan end marker and no begin marker.
+	// Drop those too rather than letting them accumulate.
+	kept = kept[:0]
+	for _, l := range head {
+		if t := strings.TrimSpace(l); t == RootBlockEnd {
+			continue
+		}
+		kept = append(kept, l)
+	}
+	head = kept
+
+	// Comment out any live value for this key. Only lines that are still
+	// active assignments qualify: a key we already wrote must not be wrapped a
+	// second time, or the file grows by three lines on every run.
 	for i := range head {
 		t := strings.TrimSpace(head[i])
 		if re.MatchString(head[i]) && !strings.HasPrefix(t, "#") {
-			head[i] = "# brewkeg replaced: " + head[i]
+			head[i] = replacedPrefix + " " + head[i]
 		}
 	}
 
-	// If a previous brewkeg root block is already here, swap its body in place
-	// so we do not accumulate duplicate markers.
-	replaced := false
-	for i := range head {
-		if strings.TrimSpace(head[i]) == strings.TrimSpace(RootBlockBegin) {
-			head[i] = kv
-			replaced = true
+	block := []string{RootBlockBegin, kv, RootBlockEnd}
+
+	// Place it after the last non-empty root line, so the block sits at the end
+	// of the root region and cannot drift above the user's own keys.
+	insertAt := 0
+	for i := len(head) - 1; i >= 0; i-- {
+		if strings.TrimSpace(head[i]) != "" {
+			insertAt = i + 1
 			break
 		}
 	}
-	if !replaced {
-		insertAt := 0
-		for i := len(head) - 1; i >= 0; i-- {
-			if strings.TrimSpace(head[i]) != "" {
-				insertAt = i + 1
-				break
-			}
-		}
-		merged := append([]string{}, head[:insertAt]...)
-		merged = append(merged, strings.Split(strings.TrimRight(block, "\n"), "\n")...)
-		merged = append(merged, head[insertAt:]...)
-		head = merged
-	}
+	merged := append([]string{}, head[:insertAt]...)
+	merged = append(merged, block...)
+	merged = append(merged, head[insertAt:]...)
+	head = merged
 
 	out := strings.Join(head, "\n")
 	if len(tail) > 0 {
