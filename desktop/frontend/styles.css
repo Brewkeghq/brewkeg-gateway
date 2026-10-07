@@ -105,23 +105,24 @@ main { padding: 26px 22px 24px; }
 
 /* -------------------------------------------------------------- masthead */
 
-/* The rule is the app's signature: a signal bar that says which product this
-   is before a single word is read. */
+/* The keg does what the lime rule used to do — say which product this is
+   before a word is read — and says it as the actual brand rather than as an
+   abstract bar. It is kept at 22px and no larger: the full keg illustration
+   loses its silhouette under about 28px, which is why icons/brewkeg.svg keeps
+   only the barrel, the band and the </>. */
 .brand {
-  margin: 0 0 12px;
+  margin: 0 0 13px;
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 9px;
   font-family: var(--mono);
   font-size: 11px;
   letter-spacing: 0.02em;
 }
-.brand::before {
-  content: "";
-  width: 3px;
-  height: 13px;
-  border-radius: 1px;
-  background: var(--accent);
+.brand-mark {
+  width: 22px;
+  height: 22px;
+  display: block;
   flex: none;
 }
 .brand-name { color: var(--ink); font-weight: 600; }

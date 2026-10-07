@@ -253,6 +253,38 @@ export namespace brewkeg {
 		}
 	}
 	
+	export class RelaunchApp {
+	    bundleId?: string;
+	    name: string;
+	    bins?: string[];
+	
+	    static createFrom(source: any = {}) {
+	        return new RelaunchApp(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.bundleId = source["bundleId"];
+	        this.name = source["name"];
+	        this.bins = source["bins"];
+	    }
+	}
+	export class RelaunchResult {
+	    app: string;
+	    action: string;
+	    detail?: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new RelaunchResult(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.app = source["app"];
+	        this.action = source["action"];
+	        this.detail = source["detail"];
+	    }
+	}
 	export class RestartHint {
 	    what: string;
 	    action: string;
@@ -276,6 +308,7 @@ export namespace brewkeg {
 	    enabled: EnabledSpec;
 	    files?: FileSpec[];
 	    manual?: string;
+	    restartApps?: RelaunchApp[];
 	
 	    static createFrom(source: any = {}) {
 	        return new TargetSpec(source);
@@ -291,6 +324,7 @@ export namespace brewkeg {
 	        this.enabled = this.convertValues(source["enabled"], EnabledSpec);
 	        this.files = this.convertValues(source["files"], FileSpec);
 	        this.manual = source["manual"];
+	        this.restartApps = this.convertValues(source["restartApps"], RelaunchApp);
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
@@ -384,6 +418,7 @@ export namespace main {
 	    message: string;
 	    warning?: string;
 	    key: brewkeg.KeyCheck;
+	    relaunched?: brewkeg.RelaunchResult[];
 	
 	    static createFrom(source: any = {}) {
 	        return new ConfigureResult(source);
@@ -399,6 +434,7 @@ export namespace main {
 	        this.message = source["message"];
 	        this.warning = source["warning"];
 	        this.key = this.convertValues(source["key"], brewkeg.KeyCheck);
+	        this.relaunched = this.convertValues(source["relaunched"], brewkeg.RelaunchResult);
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
