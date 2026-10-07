@@ -47,6 +47,10 @@ type TargetSpec struct {
 	// instructions instead, because the setting lives in a GUI we do not own.
 	Files  []FileSpec `json:"files,omitempty"`
 	Manual string     `json:"manual,omitempty"`
+	// RestartApps are the desktop apps that must be cycled for this target's
+	// change to take effect. A config file is read once at launch, so writing
+	// it does nothing until the app comes back.
+	RestartApps []RelaunchApp `json:"restartApps,omitempty"`
 }
 
 type DetectSpec struct {
@@ -148,6 +152,14 @@ func DefaultSpec() Spec {
 			},
 			{
 				ID: "codex", Label: "Codex CLI", Icon: "openai",
+				RestartApps: []RelaunchApp{{
+					// The Codex desktop app ships inside ChatGPT.app, so the
+					// bundle id is the reliable way in — matching on the app's
+					// name on disk would find the wrong thing or nothing.
+					BundleID: "com.openai.codex",
+					Name:     "Codex desktop",
+					Bins:     []string{"Codex.exe", "ChatGPT.exe"},
+				}},
 				Detect: DetectSpec{Dirs: []string{".codex"}, Bins: []string{"codex"}},
 				Enabled: EnabledSpec{
 					TomlTable: "model_providers.brewkeg",
@@ -186,7 +198,7 @@ func DefaultSpec() Spec {
 						{Name: "inferenceProvider", Value: `"gateway"`},
 						{Name: "inferenceGatewayBaseUrl", Value: `"{{baseUrl}}"`},
 						{Name: "inferenceCredentialKind", Value: `"static"`},
-						{Name: "inferenceGatewayAuthScheme", Value: `"Bearer"`},
+						{Name: "inferenceGatewayAuthScheme", Value: `"bearer"`},
 						{Name: "inferenceGatewayApiKey", Value: `"{{apiKey}}"`},
 						// Model discovery off: an explicit list is what makes
 						// the connection test meaningful, and discovery on a
@@ -207,6 +219,11 @@ func DefaultSpec() Spec {
 					Entries: []KVSpec{
 						{Name: "allowDevTools", Value: "true"},
 					},
+				}},
+				RestartApps: []RelaunchApp{{
+					BundleID: "com.anthropic.claudefordesktop",
+					Name:     "Claude Desktop",
+					Bins:     []string{"Claude.exe", "claude.exe"},
 				}},
 				Manual: "Open Claude Desktop\nHelp -> Troubleshooting -> Enable Developer Mode, then fully quit and reopen\nDeveloper menu -> Configure Third-Party Inference...\nBase URL: {{baseUrl}}   (no /v1 suffix — Claude Desktop appends it)\nGateway API key: {{apiKey}}\nModels: {{mainModel}}\nApply Changes, then fully quit and reopen the app",
 			},

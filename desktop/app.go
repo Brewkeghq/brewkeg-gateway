@@ -5,6 +5,7 @@ import (
 	"fmt"
 	goruntime "runtime"
 	"strings"
+	"time"
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 
@@ -82,6 +83,8 @@ type ConfigureResult struct {
 	Warning string `json:"warning,omitempty"`
 	// Key is the validation result that gated (or failed to gate) this write.
 	Key brewkeg.KeyCheck `json:"key"`
+	// Relaunched lists the desktop apps we cycled so the change took effect.
+	Relaunched []brewkeg.RelaunchResult `json:"relaunched,omitempty"`
 }
 
 // Configure backs up, then writes the selected targets. The backup is saved
@@ -144,6 +147,10 @@ func (a *App) Configure(apiKey string, ids []string, baseURL, mainModel, fastMod
 		}
 	}
 	out.Restart = brewkeg.RestartHintsFor(ids, paths)
+
+	// Now do it rather than printing a list of things the user will forget to
+	// do. Only apps that were already running are touched.
+	out.Relaunched = brewkeg.Relaunch(brewkeg.RestartAppsFor(ids), 8*time.Second)
 
 	n := len(results) - failed
 	if failed > 0 {

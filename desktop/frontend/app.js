@@ -46,6 +46,7 @@ const DEMO_RESULT = {
     { what: "Claude Desktop", action: "quit and reopen" },
     { what: "Your terminal", action: "open a new window" },
   ],
+  relaunched: [{ app: "Codex desktop", action: "restarted", detail: "bundle com.openai.codex" }],
   results: [
     { id: "claude-cli", label: "Claude Code", ok: true, paths: ["~/.claude/settings.json", "~/.zshrc"], manual: "" },
     { id: "desktop", label: "Claude Desktop", ok: true, paths: [], manual: "Developer → Configure Third-Party Inference…\nBase URL: https://brewkeg.dev" },
@@ -171,6 +172,9 @@ function render() {
 
     const row = document.createElement("div");
     row.className = "service";
+    row.setAttribute("role", "switch");
+    row.setAttribute("aria-selected", String(!!t.enabled));
+    row.tabIndex = 0;
 
     const icon = document.createElement("img");
     icon.className = "service-icon";
@@ -182,11 +186,6 @@ function render() {
     name.className = "service-name";
     name.textContent = t.label;
 
-    const path = document.createElement("div");
-    path.className = "service-path";
-    path.textContent = shorten(t.path || "in-app");
-    path.title = t.path || "";
-
     const sw = document.createElement("div");
     sw.className = "switch";
     sw.id = `sw-${t.id}`;
@@ -194,8 +193,17 @@ function render() {
     sw.setAttribute("aria-checked", String(t.enabled));
     sw.setAttribute("aria-label", t.label);
 
-    row.append(icon, name, path, sw);
+    // No config path here on purpose: it is noise in a "what am I connecting"
+    // list, it leaked the absolute home directory, and the docket after a
+    // successful run is where a path actually belongs.
+    row.append(icon, name, sw);
     row.addEventListener("click", () => toggle(t.id));
+    row.addEventListener("keydown", (e) => {
+      if (e.key === " " || e.key === "Enter") {
+        e.preventDefault();
+        toggle(t.id);
+      }
+    });
     li.appendChild(row);
     list.appendChild(li);
   }
@@ -204,7 +212,9 @@ function render() {
 
 function toggle(id) {
   const sw = el(`sw-${id}`);
-  sw.setAttribute("aria-checked", String(sw.getAttribute("aria-checked") !== "true"));
+  const on = sw.getAttribute("aria-checked") !== "true";
+  sw.setAttribute("aria-checked", String(on));
+  sw.closest(".service")?.setAttribute("aria-selected", String(on));
   updateButton();
 }
 
@@ -249,24 +259,35 @@ async function apply() {
 
 // A config file is only read when the app starts. Without this the user closes
 // the window, sees no change, and assumes brewkeg failed.
-function showRestart(hints) {
+// One list, two states. Apps we already cycled are struck through as done so
+// the panel answers "is there anything left for me?" rather than repeating work
+// the user did not have to do.
+function showRestart(items) {
   const box = el("restart");
   const list = el("restart-list");
   list.innerHTML = "";
-  if (!hints || !hints.length) {
+  if (!items || !items.length) {
     box.hidden = true;
     return;
   }
-  for (const h of hints) {
+  el("restart-title").textContent =
+    items.some((i) => i.done) && items.every((i) => i.done)
+      ? "Restarted for you"
+      : "Restart to apply";
+  for (const it of items) {
     const li = document.createElement("li");
-    li.textContent = `${h.what} — ${h.action}`;
+    li.textContent = it.done ? `${it.what} — restarted` : `${it.what} — ${it.action}`;
+    if (it.done) li.className = "done";
     list.appendChild(li);
   }
   box.hidden = false;
 }
 
 function copyRestart() {
-  const text = ["Restart these to apply:", ...restartHints.map((h) => `• ${h.what} — ${h.action}`)].join("\n");
+  const pending = restartHints.filter((h) => !h.done);
+  const text = pending.length
+    ? ["Restart these to apply:", ...pending.map((h) => `• ${h.what} — ${h.action}`)].join("\n")
+    : "Everything has been restarted.";
   api.CopyToClipboard(text);
   el("copy-restart").textContent = "Copied";
   setTimeout(() => (el("copy-restart").textContent = "Copy"), 1500);
@@ -296,7 +317,22 @@ function showDocket(r) {
     li.append(mark, body, where);
     lines.appendChild(li);
   }
-  restartHints = r.restart || [];
+  // Anything we could not cycle stays in the list as a hint, because it still
+  // has to happen by hand. Anything we did cycle is shown as done, not advice.
+  const handled = new Map();
+  for (const x of r.relaunched || []) {
+    if (x.action === "restarted") handled.set(x.app, true);
+    else if (x.action === "could not restart") {
+      handled.set(x.app, { what: x.app, action: x.detail || "quit and reopen it" });
+    }
+  }
+  restartHints = (r.restart || [])
+    .filter((h) => !handled.has(h.what))
+    .map((h) => ({ ...h, done: false }));
+  for (const [name, v] of handled) {
+    if (v === true) restartHints.push({ what: name, done: true });
+    else restartHints.push({ ...v, done: false });
+  }
   showRestart(restartHints);
   el("docket").hidden = false;
   // The promise line is now what the docket is showing — don't say it twice.
@@ -325,8 +361,4 @@ function say(text, bad) {
   n.hidden = !text;
   n.textContent = text;
   n.className = "note" + (bad ? " bad" : "");
-}
-
-function shorten(p) {
-  return p.replace(/^\/Users\/[^/]+/, "~");
 }
