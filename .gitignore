@@ -1,0 +1,9 @@
+# built binary
+/brewkeg
+/brewkeg.exe
+
+# goreleaser output
+/dist/
+
+# macOS
+.DS_Store

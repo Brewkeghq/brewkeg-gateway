@@ -1,0 +1,36 @@
+name: cli-release
+
+on:
+  push:
+    tags:
+      - 'cli-v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: cli
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+          cache-dependency-path: cli/go.sum
+
+      - name: Test
+        working-directory: cli
+        run: go vet ./... && go build -o /dev/null .
+
+      - name: Release
+        working-directory: cli
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          version: latest
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
