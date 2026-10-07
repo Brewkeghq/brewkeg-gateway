@@ -76,6 +76,20 @@ body {
 
 main { padding: 24px 20px 26px; }
 
+/* Wordmark. The window title says "Gateway"; this says whose it is, once,
+   quietly — no logo lockup, no badge. */
+.brand {
+  margin: 0 0 10px;
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.02em;
+}
+.brand-name { color: var(--ink); font-weight: 600; }
+.brand-by { color: var(--muted-foreground); }
+
 h1 {
   margin: 0 0 14px;
   font-family: var(--serif);

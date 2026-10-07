@@ -28,7 +28,8 @@ const ICONS = {
 const DEMO_STATE = {
   version: "0.1.0",
   baseUrl: "https://brewkeg.dev",
-  maskedKey: "",
+  maskedKey: "bk_live_****ac41",
+  apiKey: "bk_live_demo_9f3ac1c07d2e4b5680ac41",
   targets: [
     { id: "claude-cli", label: "Claude Code", installed: true, enabled: false, path: "~/.claude/settings.json" },
     { id: "codex", label: "Codex CLI", installed: true, enabled: true, path: "~/.codex/config.toml" },
@@ -74,6 +75,10 @@ async function boot() {
   el("copy-restart").addEventListener("click", copyRestart);
   el("get-key").title = `Get your API key at ${state.baseUrl}/dashboard`;
   refreshSpec();
+  if (state.apiKey) {
+    // Reopening should never cost you the key you already gave us.
+    el("apikey").value = state.apiKey;
+  }
   if (state.maskedKey) {
     el("key-label").textContent = "Using";
     el("key-note").insertAdjacentHTML("beforeend", ` <code>${state.maskedKey}</code>`);

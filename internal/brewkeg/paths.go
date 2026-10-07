@@ -44,6 +44,22 @@ func brewkegHome() string { return HomeJoin(".brewkeg") }
 
 func BackupsRoot() string { return filepath.Join(brewkegHome(), "backups") }
 
+// EnsurePrivateDir makes dir exist and owner-only.
+//
+// MkdirAll does not tighten a directory that already exists, and everything
+// under ~/.brewkeg is a copy of, or is, a credential: the key store and every
+// backup of a tool config that holds ANTHROPIC_AUTH_TOKEN. So this both creates
+// with 0700 and chmods an existing one.
+func EnsurePrivateDir(dir string) error {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return err
+	}
+	if err := os.Chmod(dir, 0o700); err != nil && !os.IsPermission(err) {
+		return err
+	}
+	return nil
+}
+
 // rcCandidates are the rc files we are willing to write exports into, most
 // likely first. They double as the fallback for detection.
 func rcCandidates() []string {

@@ -411,6 +411,7 @@ export namespace main {
 	    dashboard: string;
 	    hasKey: boolean;
 	    maskedKey: string;
+	    apiKey: string;
 	    targets: brewkeg.TargetStatus[];
 	    backups: brewkeg.Backup[];
 	    platform: string;
@@ -428,6 +429,7 @@ export namespace main {
 	        this.dashboard = source["dashboard"];
 	        this.hasKey = source["hasKey"];
 	        this.maskedKey = source["maskedKey"];
+	        this.apiKey = source["apiKey"];
 	        this.targets = this.convertValues(source["targets"], brewkeg.TargetStatus);
 	        this.backups = this.convertValues(source["backups"], brewkeg.Backup);
 	        this.platform = source["platform"];

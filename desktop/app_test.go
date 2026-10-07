@@ -127,3 +127,79 @@ func TestGetStateReportsEnabledAfterConfigure(t *testing.T) {
 		}
 	}
 }
+
+// Relaunching the app must not cost the user the key they already gave us:
+// GetState hands it straight back so the field opens filled in.
+func TestGetStateReturnsTheStoredKey(t *testing.T) {
+	sandbox(t)
+	app := NewApp()
+
+	if st := app.GetState(); st.ApiKey != "" || st.HasKey {
+		t.Fatalf("fresh sandbox should have no key, got hasKey=%v apiKey=%q", st.HasKey, st.ApiKey)
+	}
+
+	const key = "bk_live_prefill_4242"
+	if res := app.Configure(key, []string{"claude-cli"}, "https://brewkeg.dev", "", ""); !res.OK {
+		t.Fatal(res.Message)
+	}
+
+	st := app.GetState()
+	if !st.HasKey {
+		t.Fatal("HasKey should be true after a successful configure")
+	}
+	if st.ApiKey != key {
+		t.Fatalf("ApiKey = %q, want the key verbatim", st.ApiKey)
+	}
+	if !strings.Contains(st.MaskedKey, "*") {
+		t.Fatalf("MaskedKey = %q, want it masked", st.MaskedKey)
+	}
+}
+
+// Codex-only is the case the old read-from-settings.json could not serve: the
+// key was written to ~/.codex and nowhere else.
+func TestPrefillWorksForCodexOnly(t *testing.T) {
+	sandbox(t)
+	app := NewApp()
+
+	const key = "bk_live_codex_prefill_77"
+	if res := app.Configure(key, []string{"codex"}, "https://brewkeg.dev", "", ""); !res.OK {
+		t.Fatal(res.Message)
+	}
+	if st := app.GetState(); st.ApiKey != key {
+		t.Fatalf("ApiKey = %q, want %q", st.ApiKey, key)
+	}
+}
+
+// An empty box on relaunch must not be a dead end: the remembered key fills in
+// rather than the window refusing to do anything.
+func TestConfigureFallsBackToTheStoredKey(t *testing.T) {
+	sandbox(t)
+	app := NewApp()
+
+	const key = "bk_live_fallback_3131"
+	if res := app.Configure(key, []string{"claude-cli"}, "https://brewkeg.dev", "", ""); !res.OK {
+		t.Fatal(res.Message)
+	}
+	// Pretend the user cleared the field and hit the button again.
+	res := app.Configure("", []string{"claude-cli"}, "https://brewkeg.dev", "", "")
+	if !res.OK {
+		t.Fatalf("empty field should fall back to the stored key, got: %s", res.Message)
+	}
+	if !strings.Contains(readFileString(t, filepath.Join(sandboxHOME(t), ".claude", "settings.json")), key) {
+		t.Fatal("the fallback key should be what landed in settings.json")
+	}
+}
+
+func readFileString(t *testing.T, p string) string {
+	t.Helper()
+	b, err := os.ReadFile(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(b)
+}
+
+func sandboxHOME(t *testing.T) string {
+	t.Helper()
+	return os.Getenv("HOME")
+}

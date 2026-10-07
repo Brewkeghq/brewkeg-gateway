@@ -112,7 +112,15 @@ func runUninstall(args []string) int {
 		return 0
 	}
 	fmt.Println("This restores your configs from backup", b.ID)
-	return runRestore(append(args, "--backup", b.ID))
+	if code := runRestore(append(args, "--backup", b.ID)); code != 0 {
+		return code
+	}
+	// Uninstall is explicit: forget the key too, so it does not sit in
+	// ~/.brewkeg/key after the user asked us to leave.
+	if err := brewkeg.ClearKey(); err != nil {
+		fmt.Fprintf(os.Stderr, "  note: could not clear stored key: %v\n", err)
+	}
+	return 0
 }
 
 func hasFlag(args []string, name string) bool {

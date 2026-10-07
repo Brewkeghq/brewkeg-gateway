@@ -47,13 +47,13 @@ jobs:
         include:
           - os: macos-latest
             platform: darwin/universal
-            package: desktop/build/bin/brewkeg.app
+            package: desktop/build/bin/gateway.app
           - os: windows-latest
             platform: windows/amd64
-            package: desktop/build/bin/brewkeg.exe
+            package: desktop/build/bin/gateway.exe
           - os: ubuntu-latest
             platform: linux/amd64
-            package: desktop/build/bin/brewkeg
+            package: desktop/build/bin/gateway
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -87,19 +87,19 @@ jobs:
         if: runner.os == 'macOS'
         run: |
           cd desktop/build/bin
-          ditto -c -k --keepParent brewkeg.app "brewkeg_${GITHUB_REF_NAME}_macos.zip"
+          ditto -c -k --keepParent gateway.app "gateway_${GITHUB_REF_NAME}_macos.zip"
 
       - name: Package (Windows)
         if: runner.os == 'Windows'
         run: |
           cd desktop/build/bin
-          7z a "brewkeg_${env:GITHUB_REF_NAME}_windows.zip" brewkeg.exe
+          7z a "gateway_${env:GITHUB_REF_NAME}_windows.zip" gateway.exe
 
       - name: Package (Linux)
         if: runner.os == 'Linux'
         run: |
           cd desktop/build/bin
-          tar czf "brewkeg_${GITHUB_REF_NAME}_linux.tar.gz" brewkeg
+          tar czf "gateway_${GITHUB_REF_NAME}_linux.tar.gz" gateway
 
       - name: Attach to release
         shell: bash
@@ -107,9 +107,9 @@ jobs:
           cd desktop/build/bin
           ls -la
           case "${{ runner.os }}" in
-            macOS) asset="brewkeg_${GITHUB_REF_NAME}_macos.zip" ;;
-            Windows) asset="brewkeg_$(echo $GITHUB_REF_NAME | tr -d 'v')_windows.zip" ;;
-            *) asset="brewkeg_${GITHUB_REF_NAME}_linux.tar.gz" ;;
+            macOS) asset="gateway_${GITHUB_REF_NAME}_macos.zip" ;;
+            Windows) asset="gateway_$(echo $GITHUB_REF_NAME | tr -d 'v')_windows.zip" ;;
+            *) asset="gateway_${GITHUB_REF_NAME}_linux.tar.gz" ;;
           esac
           [ -f "$asset" ] || asset=$(ls -t *.zip *.tar.gz 2>/dev/null | head -1)
           gh release upload "$GITHUB_REF_NAME" "$asset" --clobber

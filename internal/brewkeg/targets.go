@@ -387,7 +387,23 @@ func ApplyWithSpec(s Spec, ids []string, opts Options) (*Backup, []ApplyResult, 
 	if err := b.Save(); err != nil {
 		return b, results, err
 	}
+
+	// Remember the key so the next launch opens with it filled in. Only once a
+	// write actually landed — a run that failed everywhere left the machine
+	// untouched, so claiming to know its key would be a lie.
+	if anyOK(results) {
+		_ = StoreKey(opts.APIKey)
+	}
 	return b, results, nil
+}
+
+func anyOK(rs []ApplyResult) bool {
+	for _, r := range rs {
+		if r.OK {
+			return true
+		}
+	}
+	return false
 }
 
 /* ------------------------------------------------------------------ caches */
@@ -474,17 +490,8 @@ var brewkegEnvKeys = []string{
 	"ANTHROPIC_SMALL_FAST_MODEL",
 }
 
-// StoredKey returns the brewkeg key already configured on this machine, if any.
-func StoredKey() string {
-	raw := ReadFile(HomeJoin(".claude", "settings.json"))
-	var doc struct {
-		Env map[string]string `json:"env"`
-	}
-	if json.Unmarshal([]byte(raw), &doc) == nil {
-		return doc.Env["ANTHROPIC_AUTH_TOKEN"]
-	}
-	return ""
-}
+// StoredKey lives in keystore.go; it reads the key store first and falls back
+// to the Claude Code settings.
 
 func runtimeIsWindows() bool { return isWindows() }
 

@@ -28,9 +28,13 @@ type State struct {
 	Dashboard string                 `json:"dashboard"`
 	HasKey    bool                   `json:"hasKey"`
 	MaskedKey string                 `json:"maskedKey"`
-	Targets   []brewkeg.TargetStatus `json:"targets"`
-	Backups   []brewkeg.Backup       `json:"backups"`
-	Platform  string                 `json:"platform"`
+	// ApiKey is the remembered key, sent so the field opens filled in. This is
+	// a local desktop app talking to its own window over the Wails bridge; it
+	// is the same value already sitting in the user's tool configs.
+	ApiKey   string                 `json:"apiKey"`
+	Targets  []brewkeg.TargetStatus `json:"targets"`
+	Backups  []brewkeg.Backup       `json:"backups"`
+	Platform string                 `json:"platform"`
 	// StaleCache is a gateway-keyed cache that configuring will clear.
 	StaleCache string `json:"staleCache,omitempty"`
 	// SpecVersion is the client-config version in force. 0 means the built-in
@@ -49,6 +53,7 @@ func (a *App) GetState() State {
 	if k := brewkeg.StoredKey(); k != "" {
 		st.HasKey = true
 		st.MaskedKey = brewkeg.MaskKey(k)
+		st.ApiKey = k
 	}
 	if n := brewkeg.StaleGatewayCachesPending(); len(n) > 0 {
 		st.StaleCache = n[0]
@@ -78,6 +83,12 @@ type ConfigureResult struct {
 // before anything is reported as done, so the window can always offer an undo.
 func (a *App) Configure(apiKey string, ids []string, baseURL, mainModel, fastModel string) ConfigureResult {
 	apiKey = strings.TrimSpace(apiKey)
+	if apiKey == "" {
+		// The field opens pre-filled from the key store, so an empty box means
+		// the user deliberately cleared it. Fall back to what we remember
+		// rather than refusing a change that needs no new secret.
+		apiKey = brewkeg.StoredKey()
+	}
 	if apiKey == "" {
 		return ConfigureResult{Message: "Paste your brewkeg API key first."}
 	}

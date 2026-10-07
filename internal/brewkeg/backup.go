@@ -81,7 +81,7 @@ func (b *Backup) Capture(target, path string) error {
 	}
 
 	dir := filepath.Join(BackupsRoot(), b.ID)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := EnsurePrivateDir(dir); err != nil {
 		return err
 	}
 
@@ -184,7 +184,7 @@ func sanitize(p string) string {
 
 func (b *Backup) Save() error {
 	dir := filepath.Join(BackupsRoot(), b.ID)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := EnsurePrivateDir(dir); err != nil {
 		return err
 	}
 	raw, err := json.MarshalIndent(b, "", "  ")

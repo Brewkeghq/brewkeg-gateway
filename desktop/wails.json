@@ -1,7 +1,7 @@
 {
   "$schema": "https://wails.io/schemas/config.v2.json",
-  "name": "brewkeg",
-  "outputfilename": "brewkeg",
+  "name": "gateway",
+  "outputfilename": "gateway",
   "frontend:install": "",
   "frontend:build": "",
   "frontend:dev:watcher": "",
@@ -10,8 +10,8 @@
     "name": "brewkeg"
   },
   "info": {
-    "productName": "brewkeg",
+    "productName": "Gateway",
     "productVersion": "0.1.0",
-    "comments": "Configure Claude Code, Codex and Claude Desktop to use brewkeg"
+    "comments": "Gateway by brewkeg — point Claude Code, Codex and Claude Desktop at brewkeg"
   }
 }
