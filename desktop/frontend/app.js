@@ -7,8 +7,10 @@ const real = window.go?.main?.App;
 const demo = !real && new URLSearchParams(location.search).has("demo");
 const api = real ?? {
   GetState: async () => DEMO_STATE,
+  CheckKey: async () => ({ ok: true, valid: true, status: 200, message: "Key works — claude-haiku-4-5 in 412ms.", latencyMs: 412 }),
   CheckForUpdate: async () => ({ available: true, current: "0.1.0", latest: "0.2.0", url: "#", notes: "Adds OpenCode" }),
   OpenUpdate: () => {},
+  OpenRepo: () => {},
   Configure: async () => DEMO_RESULT,
   Restore: async () => "~/.claude/settings.json — restored original\n~/.zshrc — removed",
   OpenDashboard: () => {},
@@ -56,7 +58,10 @@ async function boot() {
   el("peek").addEventListener("click", togglePeek);
   el("undo").addEventListener("click", undo);
   el("apply").addEventListener("click", apply);
+  el("check").addEventListener("click", check);
+  el("apikey").addEventListener("input", () => hideCheck());
   el("update").addEventListener("click", () => api.OpenUpdate(el("update").dataset.url));
+  el("repo").addEventListener("click", () => api.OpenRepo());
   el("get-key").title = `Get your API key at ${state.baseUrl}/dashboard`;
   if (state.maskedKey) {
     el("key-label").textContent = "Using";
@@ -75,6 +80,41 @@ async function checkUpdate() {
   } catch {
     /* no network, no banner — a failed check must never block setup */
   }
+}
+
+// A key is tested against the live gateway before anything is written, so a
+// typo never reaches the user's config files.
+async function check() {
+  const key = el("apikey").value.trim();
+  if (!key) {
+    showCheck("Paste your API key first.", "bad");
+    return;
+  }
+  const line = showCheck("Testing…", "testing");
+  el("check").disabled = true;
+  try {
+    const r = await api.CheckKey(key);
+    line.textContent = r.message;
+    line.className = "checkline" + (r.ok ? "" : r.valid ? " warn" : " bad");
+    el("apply").disabled = selected().length === 0 || !r.ok;
+  } catch (e) {
+    showCheck(`Test failed: ${e}`, "bad");
+  } finally {
+    el("check").disabled = false;
+  }
+}
+
+function showCheck(text, cls) {
+  const line = el("checkline");
+  line.hidden = false;
+  line.textContent = text;
+  line.className = "checkline" + (cls ? " " + cls : "");
+  return line;
+}
+
+function hideCheck() {
+  el("checkline").hidden = true;
+  updateButton();
 }
 
 function togglePeek() {

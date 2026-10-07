@@ -224,3 +224,62 @@ func TestSetTableKeysEditsOnlyNamedTable(t *testing.T) {
 		t.Fatal("SetTableKeys must report a missing table instead of inventing one")
 	}
 }
+
+// The desktop app is launched from Finder, which gives it no $SHELL and a
+// minimal PATH. Detection that only works in a login shell shows every tool as
+// "not installed" in the one place it matters most.
+func TestStatusAllWorksWithoutShellEnv(t *testing.T) {
+	h := home(t)
+	t.Setenv("SHELL", "")
+	t.Setenv("PATH", "/usr/bin:/bin")
+
+	if err := os.MkdirAll(filepath.Join(h, ".claude"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(h, ".codex"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// Already configured by a previous run, exactly as a returning user is.
+	toml := "model_provider = \"brewkeg\"\n\n[model_providers.brewkeg]\nbase_url = \"https://brewkeg.dev/v1\"\n"
+	if err := os.WriteFile(filepath.Join(h, ".codex", "config.toml"), []byte(toml), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(h, ".zshrc"), []byte("export EDITOR=vim\n"+BlockBegin+"\nexport ANTHROPIC_BASE_URL=\"https://brewkeg.dev\"\n"+BlockEnd+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	got := map[string]TargetStatus{}
+	for _, s := range StatusAll() {
+		got[s.ID] = s
+	}
+
+	if !got["claude-cli"].Installed {
+		t.Error("~/.claude is a directory; treating it as a missing file reports the tool as not installed")
+	}
+	if !got["codex"].Installed {
+		t.Error("~/.codex is a directory; it should count as installed")
+	}
+	if !got["claude-cli"].Enabled {
+		t.Error("a brewkeg block in .zshrc must show the switch as on, even with no $SHELL")
+	}
+	if !got["codex"].Enabled {
+		t.Error("an existing [model_providers.brewkeg] table must show the switch as on")
+	}
+}
+
+// ShellRC must fall back to an rc file that exists, so a GUI-launched app still
+// finds the right place to write exports.
+func TestShellRCFallsBackToExistingFile(t *testing.T) {
+	h := home(t)
+	t.Setenv("SHELL", "")
+	if err := os.WriteFile(filepath.Join(h, ".bashrc"), []byte("# bash\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := ShellRC(); got != filepath.Join(h, ".bashrc") {
+		t.Errorf("ShellRC() = %q, want the existing .bashrc", got)
+	}
+	t.Setenv("SHELL", "/bin/zsh")
+	if got := ShellRC(); got != filepath.Join(h, ".zshrc") {
+		t.Errorf("with SHELL set, ShellRC() = %q, want ~/.zshrc", got)
+	}
+}

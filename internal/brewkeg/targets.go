@@ -80,9 +80,12 @@ func StatusAll() []TargetStatus {
 		s := TargetStatus{ID: t.ID(), Label: t.Label(), Installed: p != "", Path: p}
 		switch t.ID() {
 		case "claude-cli":
-			s.Enabled = len(SettingsEnvKeys(p)) > 0 || (ShellRC() != "" && HasBlock(ReadFile(ShellRC())))
+			s.Enabled = len(SettingsEnvKeys(p)) > 0 || len(ShellRCsWithBrewkegBlock()) > 0
+			if len(ShellRCsWithBrewkegBlock()) > 0 {
+				s.Path = p + " + " + strings.Join(ShellRCsWithBrewkegBlock(), " + ")
+			}
 		case "codex":
-			s.Enabled = HasBlock(ReadFile(p)) && strings.Contains(ReadFile(p), "model_providers.brewkeg")
+			s.Enabled = CodexPointsAtBrewkeg(ReadFile(p))
 		default:
 			// Desktop is configured inside the app, so we cannot observe it.
 			s.Note = "configured in the app"
@@ -154,7 +157,7 @@ func (claudeCLITarget) ID() string    { return "claude-cli" }
 func (claudeCLITarget) Label() string { return "Claude Code CLI" }
 
 func (claudeCLITarget) DetectPath() string {
-	if FileExists(HomeJoin(".claude")) || LookPath("claude") {
+	if DirExists(HomeJoin(".claude")) || LookPath("claude") {
 		return HomeJoin(".claude", "settings.json")
 	}
 	return ""
@@ -282,7 +285,7 @@ func (codexTarget) ID() string    { return "codex" }
 func (codexTarget) Label() string { return "Codex CLI" }
 
 func (codexTarget) DetectPath() string {
-	if FileExists(HomeJoin(".codex")) || LookPath("codex") {
+	if DirExists(HomeJoin(".codex")) || LookPath("codex") {
 		return HomeJoin(".codex", "config.toml")
 	}
 	return ""

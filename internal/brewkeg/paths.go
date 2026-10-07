@@ -44,11 +44,26 @@ func brewkegHome() string { return HomeJoin(".brewkeg") }
 
 func BackupsRoot() string { return filepath.Join(brewkegHome(), "backups") }
 
+// rcCandidates are the rc files we are willing to write exports into, most
+// likely first. They double as the fallback for detection.
+func rcCandidates() []string {
+	return []string{
+		HomeJoin(".zshrc"),
+		HomeJoin(".bashrc"),
+		HomeJoin(".bash_profile"),
+		HomeJoin(".config", "fish", "config.fish"),
+		HomeJoin(".config", "nushell", "config.nu"),
+	}
+}
+
 // ShellRC is the rc file we append exports to, inferred from $SHELL.
-// Returns "" when the shell is unknown so we never guess and corrupt a file.
+//
+// $SHELL is empty when the desktop app is launched from Finder or Spotlight:
+// macOS starts GUI apps with no login environment. Falling back to "" there
+// would mean the app silently never sees (or writes) the user's shell config,
+// so when the shell is unknown we use whichever rc file actually exists.
 func ShellRC() string {
-	shell := os.Getenv("SHELL")
-	switch {
+	switch shell := os.Getenv("SHELL"); {
 	case strings.Contains(shell, "zsh"):
 		return HomeJoin(".zshrc")
 	case strings.Contains(shell, "bash"):
@@ -61,8 +76,27 @@ func ShellRC() string {
 	case strings.Contains(shell, "nu"):
 		return HomeJoin(".config", "nushell", "config.nu")
 	default:
+		for _, rc := range rcCandidates() {
+			if FileExists(rc) {
+				return rc
+			}
+		}
 		return ""
 	}
+}
+
+// ShellRCsWithBrewkegBlock lists every known rc file carrying our marked block.
+// Detection must not depend on ShellRC() alone: an app launched without
+// $SHELL, or a user who switched shells after setup, would otherwise show the
+// switch as off even though their config is being pointed at brewkeg right now.
+func ShellRCsWithBrewkegBlock() []string {
+	var hits []string
+	for _, rc := range rcCandidates() {
+		if HasBlock(ReadFile(rc)) {
+			hits = append(hits, rc)
+		}
+	}
+	return hits
 }
 
 // WindowsProfile is the PowerShell profile we export into.
@@ -72,6 +106,14 @@ func WindowsProfile() string {
 		return ""
 	}
 	return filepath.Join(dir, "Microsoft", "Windows", "PowerShell", "Microsoft.PowerShell_profile.ps1")
+}
+
+// DirExists reports whether p is a directory. Needed because the tool configs
+// live in directories (~/.claude, ~/.codex) and FileExists deliberately rejects
+// directories — checking them with it silently reports "not installed".
+func DirExists(p string) bool {
+	st, err := os.Stat(p)
+	return err == nil && st.IsDir()
 }
 
 func FileExists(p string) bool {
@@ -98,9 +140,22 @@ func WriteFile(p, content string) error {
 }
 
 // LookPath reports whether a binary is on PATH, used only for detection hints.
+// A Finder-launched app inherits a minimal PATH (no Homebrew, no ~/.local/bin),
+// so we also check the usual install locations before calling a tool missing.
 func LookPath(bin string) bool {
-	_, err := exec.LookPath(bin)
-	return err == nil
+	if _, err := exec.LookPath(bin); err == nil {
+		return true
+	}
+	for _, dir := range []string{
+		"/opt/homebrew/bin", "/usr/local/bin",
+		HomeJoin(".local", "bin"), HomeJoin("bin"),
+		HomeJoin(".bun", "bin"), "/usr/bin",
+	} {
+		if FileExists(filepath.Join(dir, bin)) {
+			return true
+		}
+	}
+	return false
 }
 
 // MaskKey is how a key is shown back to a human: enough to recognise, not enough
@@ -114,3 +169,7 @@ func MaskKey(k string) string {
 	}
 	return k[:6] + strings.Repeat("*", 6) + k[len(k)-2:]
 }
+
+// RepoURL is where the CLI and desktop app source lives. Shown in the app so
+// anyone can read exactly what touches their machine.
+const RepoURL = "https://github.com/brewkeg/brewkeg-cli"

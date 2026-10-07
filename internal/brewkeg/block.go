@@ -163,3 +163,29 @@ func SetTableKeys(content, table string, kv []string) (string, bool) {
 func TableHas(content, table string) bool {
 	return strings.Contains(content, "\n["+table+"]") || strings.HasPrefix(content, "["+table+"]")
 }
+
+// CodexPointsAtBrewkeg reports whether a codex config.toml routes through
+// brewkeg — the provider table plus the root key that selects it.
+//
+// It deliberately does not look for our own marker: plenty of people wire
+// brewkeg in by hand, and the switch in the app has to agree with what Codex
+// actually does, not with how the file got that way.
+func CodexPointsAtBrewkeg(content string) bool {
+	return TableHas(content, "model_providers.brewkeg") && RootKeyIs(content, "model_provider", "brewkeg")
+}
+
+// RootKeyIs reports whether a root-scope key has the given value. Root scope
+// only — a `model_provider` inside any [table] belongs to that table and is
+// not what Codex reads.
+func RootKeyIs(content, key, want string) bool {
+	re := regexp.MustCompile(`(?m)^\s*` + regexp.QuoteMeta(key) + `\s*=\s*"([^"]*)"`)
+	for _, line := range strings.Split(content, "\n") {
+		if strings.HasPrefix(strings.TrimSpace(line), "[") {
+			break
+		}
+		if m := re.FindStringSubmatch(line); m != nil {
+			return m[1] == want
+		}
+	}
+	return false
+}

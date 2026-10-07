@@ -143,3 +143,15 @@ func (a *App) OpenDashboard() {
 func (a *App) RevealBackupDir() {
 	runtime.BrowserOpenURL(a.ctx, "file://"+brewkeg.BackupsRoot())
 }
+
+// CheckKey tests an API key against the live gateway without writing anything,
+// so a typo never reaches the user's config files.
+func (a *App) CheckKey(apiKey string) brewkeg.KeyCheck {
+	return brewkeg.CheckKey(a.context(), brewkeg.BaseURL(), apiKey)
+}
+
+// OpenRepo sends the user to the source. The app edits their dotfiles and makes
+// live network calls, so the code has to be one click away from the window.
+func (a *App) OpenRepo() {
+	runtime.BrowserOpenURL(a.ctx, brewkeg.RepoURL)
+}

@@ -81,6 +81,26 @@ export namespace brewkeg {
 		}
 	}
 	
+	export class KeyCheck {
+	    ok: boolean;
+	    valid: boolean;
+	    status: number;
+	    message: string;
+	    latencyMs: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new KeyCheck(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.ok = source["ok"];
+	        this.valid = source["valid"];
+	        this.status = source["status"];
+	        this.message = source["message"];
+	        this.latencyMs = source["latencyMs"];
+	    }
+	}
 	export class TargetStatus {
 	    id: string;
 	    label: string;

@@ -18,12 +18,15 @@
       <section class="card tight">
         <div class="field">
           <input id="apikey" type="password" spellcheck="false" autocomplete="off" placeholder="API key" />
+          <button class="btn-quiet" id="check" type="button">Test</button>
           <button class="btn-quiet" id="peek" type="button">Show</button>
         </div>
         <p class="field-note" id="key-note"><span id="key-label">No key yet?</span>
           <button class="linkish" id="get-key" type="button">brewkeg.dev/dashboard</button>
         </p>
       </section>
+
+      <p class="checkline" id="checkline" hidden></p>
 
       <section class="card tight">
         <ul class="services" id="services"></ul>
@@ -49,6 +52,10 @@
       </section>
 
       <p class="note" id="note" hidden></p>
+
+      <p class="foot">
+        <button class="linkish" id="repo" type="button">github.com/brewkeg/brewkeg-cli</button>
+      </p>
     </main>
 
     <script src="app.js"></script>

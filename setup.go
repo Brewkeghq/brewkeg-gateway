@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"strings"
@@ -48,6 +49,23 @@ func runSetup(args []string) int {
 	}
 	if opts.BaseURL == "" {
 		opts.BaseURL = strings.TrimRight(promptLine("Gateway base URL", brewkeg.BaseURL()), "/")
+	}
+
+	// Test the key against the live gateway before writing anything. A typo
+	// baked into ~/.codex/config.toml breaks the user's editor silently.
+	if !hasFlag(args, "--skip-check") {
+		fmt.Println("\n  Testing your key…")
+		res := brewkeg.CheckKey(context.Background(), brewkeg.BaseURL(), opts.APIKey)
+		fmt.Printf("  %s\n", res.Message)
+		if !res.OK && !res.Valid {
+			fmt.Println("\n  Nothing was changed. Check the key and try again.")
+			return 1
+		}
+		if !res.OK && res.Valid && !confirm("  Connect anyway?", false) {
+			fmt.Println("\n  Nothing was changed.")
+			return 1
+		}
+		fmt.Println()
 	}
 
 	ids := make([]string, 0, len(idxs))
