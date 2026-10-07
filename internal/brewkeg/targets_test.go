@@ -283,3 +283,58 @@ func TestShellRCFallsBackToExistingFile(t *testing.T) {
 		t.Errorf("with SHELL set, ShellRC() = %q, want ~/.zshrc", got)
 	}
 }
+
+// Claude Code caches the model list per base URL. Point it at a new gateway and
+// keep the old cache, and the picker keeps advertising models the new gateway
+// does not serve.
+func TestStaleGatewayCacheIsCleared(t *testing.T) {
+	h := home(t)
+	cache := filepath.Join(h, ".claude", "cache", "gateway-models.json")
+	if err := os.MkdirAll(filepath.Dir(cache), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(cache, []byte(`{"baseUrl":"https://brewkeg.dev"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	b, _, err := Apply([]string{"claude-cli"}, Options{APIKey: "bk_live_K"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if FileExists(cache) {
+		t.Fatal("the stale gateway cache should be cleared when we change the base url")
+	}
+	var seen bool
+	for _, e := range b.Entries {
+		if e.Path == cache {
+			seen = true
+			if !e.Transient {
+				t.Error("the cache entry must be transient, or a restore would resurrect it")
+			}
+			if !FileExists(filepath.Join(BackupDir(b.ID), e.BackupFile)) {
+				t.Error("the cache copy should still be kept in the backup")
+			}
+		}
+	}
+	if !seen {
+		t.Fatal("the cleared cache was not recorded in the backup manifest")
+	}
+
+	// Restoring must not put the old gateway's model list back.
+	if _, err := b.Restore(false); err != nil {
+		t.Fatal(err)
+	}
+	if FileExists(cache) {
+		t.Error("restore resurrected the stale cache; it should be left cleared")
+	}
+}
+
+func TestNoCacheToClearIsNotAnError(t *testing.T) {
+	home(t)
+	if n := len(StaleGatewayCachesPending()); n != 0 {
+		t.Fatalf("fresh machine should have no pending caches, got %d", n)
+	}
+	if _, _, err := Apply([]string{"claude-cli"}, Options{APIKey: "bk_live_K"}); err != nil {
+		t.Fatalf("a machine with no cache must still configure cleanly: %v", err)
+	}
+}

@@ -108,6 +108,8 @@ func WindowsProfile() string {
 	return filepath.Join(dir, "Microsoft", "Windows", "PowerShell", "Microsoft.PowerShell_profile.ps1")
 }
 
+func isWindows() bool { return runtime.GOOS == "windows" }
+
 // DirExists reports whether p is a directory. Needed because the tool configs
 // live in directories (~/.claude, ~/.codex) and FileExists deliberately rejects
 // directories — checking them with it silently reports "not installed".

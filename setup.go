@@ -10,6 +10,9 @@ import (
 )
 
 func runSetup(args []string) int {
+	spec, _ := brewkeg.FetchSpec(context.Background(), brewkeg.BaseURL())
+	status := brewkeg.StatusAllFrom(spec)
+
 	var opts brewkeg.Options
 	opts.APIKey = flagValue(args, "--api-key")
 	opts.BaseURL = flagValue(args, "--base-url")
@@ -20,7 +23,6 @@ func runSetup(args []string) int {
 	fmt.Println("Brewkeg auto-configuration")
 	fmt.Println()
 
-	status := brewkeg.StatusAll()
 	var items []choice
 	for _, s := range status {
 		hint := "not detected — will write config anyway"
@@ -73,7 +75,7 @@ func runSetup(args []string) int {
 		ids = append(ids, status[i].ID)
 	}
 
-	b, results, err := brewkeg.Apply(ids, opts)
+	b, results, err := brewkeg.ApplyWithSpec(spec, ids, opts)
 	fmt.Println()
 	for _, r := range results {
 		switch {

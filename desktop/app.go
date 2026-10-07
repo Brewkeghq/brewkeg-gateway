@@ -31,6 +31,11 @@ type State struct {
 	Targets   []brewkeg.TargetStatus `json:"targets"`
 	Backups   []brewkeg.Backup       `json:"backups"`
 	Platform  string                 `json:"platform"`
+	// StaleCache is a gateway-keyed cache that configuring will clear.
+	StaleCache string `json:"staleCache,omitempty"`
+	// SpecVersion is the client-config version in force. 0 means the built-in
+	// spec, i.e. the server could not be reached or had nothing newer.
+	SpecVersion int `json:"specVersion"`
 }
 
 func (a *App) GetState() State {
@@ -45,6 +50,10 @@ func (a *App) GetState() State {
 		st.HasKey = true
 		st.MaskedKey = brewkeg.MaskKey(k)
 	}
+	if n := brewkeg.StaleGatewayCachesPending(); len(n) > 0 {
+		st.StaleCache = n[0]
+	}
+	st.SpecVersion = brewkeg.DefaultSpec().Version
 	if all, err := brewkeg.ListBackups(); err == nil {
 		st.Backups = all
 	}
@@ -142,6 +151,13 @@ func (a *App) OpenDashboard() {
 // their own copy of their configs.
 func (a *App) RevealBackupDir() {
 	runtime.BrowserOpenURL(a.ctx, "file://"+brewkeg.BackupsRoot())
+}
+
+// RefreshSpec asks the gateway what to write for each tool. The app renders
+// from the built-in spec immediately and calls this in the background, so a
+// change to how a tool stores its config reaches users without a new release.
+func (a *App) RefreshSpec() (brewkeg.Spec, error) {
+	return brewkeg.FetchSpec(a.context(), brewkeg.BaseURL())
 }
 
 // CheckKey tests an API key against the live gateway without writing anything,

@@ -29,6 +29,11 @@ type BackupEntry struct {
 	Existed bool   `json:"existed"`
 	// BackupFile is the path inside the backup dir holding the pre-change copy.
 	BackupFile string `json:"backupFile,omitempty"`
+	// Transient marks a cache we clear rather than put back. Restoring a stale
+	// model list would keep advertising a gateway the user just disconnected
+	// from, and the next run refetches it anyway — so we keep the copy in the
+	// backup for their reference but delete the file on restore.
+	Transient bool `json:"transient,omitempty"`
 }
 
 // NewBackup starts a snapshot for one run of setup.
@@ -111,17 +116,41 @@ func (b *Backup) Capture(target, path string) error {
 // footprint too, so it must not end up in the "pre-brewkeg" backup copy.
 var replacedLineRe = regexp.MustCompile(`(?m)^# brewkeg replaced: .*\n?`)
 
+// hasBrewkegEnvKeys reports whether a JSON settings file carries our variables.
+func hasBrewkegEnvKeys(s string) bool {
+	var doc struct {
+		Env map[string]any `json:"env"`
+	}
+	if err := json.Unmarshal([]byte(s), &doc); err != nil {
+		return false
+	}
+	for _, k := range brewkegEnvKeys {
+		if _, ok := doc.Env[k]; ok {
+			return true
+		}
+	}
+	return false
+}
+
 // sanitizeBackup strips brewkeg's own footprint from a copy being backed up.
 func sanitizeBackup(path string, raw []byte) []byte {
 	s := string(raw)
+	touched := false
 	if HasBlock(s) {
 		if stripped, ok := StripBlock(s); ok {
 			s = stripped
+			touched = true
 		}
 	}
-	s = replacedLineRe.ReplaceAllString(s, "")
-	s = strings.TrimRight(s, "\n") + "\n"
-	if strings.HasSuffix(path, ".json") {
+	if replacedLineRe.ReplaceAllString(s, "") != s {
+		s = replacedLineRe.ReplaceAllString(s, "")
+		touched = true
+	}
+	// Only reformat JSON we actually touched. A file we never put our keys into
+	// is copied byte-for-byte, so restoring it cannot reorder its keys. Re-marshalling a file we did
+	// not put our keys into would reorder its keys, and then "restore" would
+	// return something semantically equal but not the bytes the user had.
+	if strings.HasSuffix(path, ".json") && hasBrewkegEnvKeys(s) {
 		var doc map[string]any
 		if err := json.Unmarshal([]byte(s), &doc); err == nil {
 			if env, ok := doc["env"].(map[string]any); ok {
@@ -132,8 +161,13 @@ func sanitizeBackup(path string, raw []byte) []byte {
 			}
 			if out, err := json.MarshalIndent(doc, "", "  "); err == nil {
 				s = string(out) + "\n"
+				touched = true
 			}
 		}
+	}
+	// Trim/terminate only when we edited the copy; otherwise keep it verbatim.
+	if touched {
+		s = strings.TrimRight(s, "\n") + "\n"
 	}
 	return []byte(s)
 }
@@ -216,6 +250,17 @@ func (b *Backup) Restore(dryRun bool) ([]RestoreResult, error) {
 	var out []RestoreResult
 	for _, e := range b.Entries {
 		switch {
+		case e.Transient:
+			if FileExists(e.Path) && !dryRun {
+				if err := os.Remove(e.Path); err != nil {
+					return out, fmt.Errorf("clearing %s: %w", e.Path, err)
+				}
+			}
+			if FileExists(e.Path) {
+				out = append(out, RestoreResult{e.Path, "would clear (refetched on next run)"})
+			} else {
+				out = append(out, RestoreResult{e.Path, "already cleared"})
+			}
 		case e.Existed:
 			raw, err := os.ReadFile(filepath.Join(BackupDir(b.ID), e.BackupFile))
 			if err != nil {

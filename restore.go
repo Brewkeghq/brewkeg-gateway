@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"strings"
@@ -80,7 +81,8 @@ func runBackups() int {
 
 func runStatus() int {
 	fmt.Print("Brewkeg configuration\n\n")
-	for _, s := range brewkeg.StatusAll() {
+	spec, _ := brewkeg.FetchSpec(context.Background(), brewkeg.BaseURL())
+	for _, s := range brewkeg.StatusAllFrom(spec) {
 		mark := "○"
 		state := "not detected on this machine"
 		if s.Installed {

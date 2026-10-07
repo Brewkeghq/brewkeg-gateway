@@ -59,6 +59,25 @@ brewkeg restore               # undo the most recent setup
 brewkeg restore --dry-run     # show what would change, touch nothing
 ```
 
+## Config comes from the server
+
+The app does not hardcode what to write. On launch it fetches
+`/api/client-config` from brewkeg.dev (generated from `web2/lib/client-config.ts`)
+and applies whatever it finds: file paths, env var names, TOML keys, models,
+labels and icons are all server data.
+
+So when Codex changes how it stores its config, we edit that one file and every
+installed app follows on its next launch — no release, no store review. Model
+ids come from the same catalog that prices the billing page, so the spec cannot
+drift from what we actually serve.
+
+The **logic** stays in the app: how to merge JSON, how to edit a TOML table in
+place, how to mark a block, how to back up and restore. The server says *what*,
+the app decides *how*, safely. Offline or on an unreachable gateway the built-in
+spec is used and setup works exactly as before. Apps also refuse a spec older
+than the one they ship with, so rolling the server file back cannot walk an
+installed app backwards.
+
 ## What it writes
 
 | Target | File |

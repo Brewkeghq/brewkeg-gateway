@@ -30,6 +30,10 @@ export function OpenUpdate(arg1) {
   return window['go']['main']['App']['OpenUpdate'](arg1);
 }
 
+export function RefreshSpec() {
+  return window['go']['main']['App']['RefreshSpec']();
+}
+
 export function Restore(arg1) {
   return window['go']['main']['App']['Restore'](arg1);
 }

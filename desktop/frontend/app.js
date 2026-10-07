@@ -7,6 +7,7 @@ const real = window.go?.main?.App;
 const demo = !real && new URLSearchParams(location.search).has("demo");
 const api = real ?? {
   GetState: async () => DEMO_STATE,
+  RefreshSpec: async () => DEMO_STATE.spec || { version: 1, targets: [] },
   CheckKey: async () => ({ ok: true, valid: true, status: 200, message: "Key works — claude-haiku-4-5 in 412ms.", latencyMs: 412 }),
   CheckForUpdate: async () => ({ available: true, current: "0.1.0", latest: "0.2.0", url: "#", notes: "Adds OpenCode" }),
   OpenUpdate: () => {},
@@ -52,6 +53,7 @@ boot().catch((e) => say(`Could not start: ${e}`, true));
 async function boot() {
   state = await api.GetState();
   el("version").textContent = state.version;
+  if (state.staleCache) el("promise").textContent = "Will clear the cached model list.";
   render();
   checkUpdate();
   el("get-key").addEventListener("click", () => api.OpenDashboard());
@@ -63,9 +65,29 @@ async function boot() {
   el("update").addEventListener("click", () => api.OpenUpdate(el("update").dataset.url));
   el("repo").addEventListener("click", () => api.OpenRepo());
   el("get-key").title = `Get your API key at ${state.baseUrl}/dashboard`;
+  refreshSpec();
   if (state.maskedKey) {
     el("key-label").textContent = "Using";
     el("key-note").insertAdjacentHTML("beforeend", ` <code>${state.maskedKey}</code>`);
+  }
+}
+
+// The gateway decides what to write for each tool, so a change to how Codex or
+// Claude Code stores its config reaches this window without a new release. The
+// window already renders from the built-in spec, so this only ever upgrades it.
+async function refreshSpec() {
+  try {
+    const spec = await api.RefreshSpec();
+    if (!spec || !spec.targets || !spec.targets.length) return;
+    if ((spec.version ?? 0) <= (state.specVersion ?? 0)) return;
+    state = { ...state, specVersion: spec.version, targets: spec.targets.map((t) => ({
+      id: t.id, label: t.label, icon: t.icon, note: t.note,
+      installed: true, enabled: t.enabled?.neverDetectable ? false : !!t.enabled,
+      path: (t.files?.[0]?.path || "").replace(/^~\//, "~/"),
+    })) };
+    render();
+  } catch {
+    /* offline: the built-in spec is already correct */
   }
 }
 

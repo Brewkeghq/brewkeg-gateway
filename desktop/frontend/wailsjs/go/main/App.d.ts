@@ -17,6 +17,8 @@ export function OpenRepo():Promise<void>;
 
 export function OpenUpdate(arg1:string):Promise<void>;
 
+export function RefreshSpec():Promise<brewkeg.Spec>;
+
 export function Restore(arg1:string):Promise<string>;
 
 export function RevealBackupDir():Promise<void>;
