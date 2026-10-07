@@ -66,6 +66,11 @@ func (t specTarget) Installed() bool {
 			return true
 		}
 	}
+	for _, d := range t.spec.Detect.DirPaths() {
+		if DirExists(resolvePath(d)) {
+			return true
+		}
+	}
 	for _, f := range t.spec.Detect.DetectPaths() {
 		if FileExists(resolvePath(f)) {
 			return true
@@ -93,16 +98,55 @@ func (t specTarget) DetectPath() string {
 }
 
 func (t specTarget) ManualInstructions(o Options) string {
+	if len(t.spec.ManualSteps) > 0 {
+		var b strings.Builder
+		for _, s := range t.spec.ManualSteps {
+			if !manualConditionHolds(s.When) {
+				continue
+			}
+			for _, l := range s.Lines {
+				b.WriteString(expand(l, o))
+				b.WriteString("\n")
+			}
+		}
+		if s := strings.TrimRight(b.String(), "\n"); s != "" {
+			return s
+		}
+	}
 	if t.spec.Manual == "" {
 		return ""
 	}
 	return expand(t.spec.Manual, o)
 }
 
+// manualConditionHolds answers the state questions the server spec can ask
+// about. Each id is a fact we can read from the machine right now; the spec
+// decides what to say about it.
+//
+// Empty means always, so a spec block with no condition cannot be silently
+// dropped by a caller that forgets to special-case it.
+//
+// An id this build does not know is false on purpose. A newer server sending a
+// condition an older engine cannot evaluate must skip that block, not crash and
+// not print a step whose precondition was never checked.
+func manualConditionHolds(when string) bool {
+	switch when {
+	case "":
+		return true
+	case "claude-desktop-developer-mode-off":
+		return !ClaudeDesktopDeveloperModeOn()
+	case "claude-desktop-profile-missing":
+		return ClaudeDesktopAppliedConfig() == ""
+	default:
+		return false
+	}
+}
+
 // Apply writes every file the spec claims for this target, using the safe
 // editor each kind maps to. The target's own config is never replaced wholesale.
 func (t specTarget) Apply(b *Backup, o Options) (string, error) {
 	var written []string
+	var err error
 
 	for _, f := range t.spec.Files {
 		path := ""
@@ -122,16 +166,11 @@ func (t specTarget) Apply(b *Backup, o Options) (string, error) {
 
 		// A path the engine has to discover rather than be told.
 		if f.Kind == "desktop-3p" {
-			path = ClaudeDesktopAppliedConfig()
-			if path == "" {
-				// No saved configuration yet — the user has never opened the
-				// third-party panel. Print the steps instead of inventing a
-				// _meta.json shape we have never seen.
-				continue
+			if path, err = ClaudeDesktopEnsureProfile(); err != nil {
+				return "", err
 			}
 		}
 
-		var err error
 		switch f.Kind {
 		case "json-env":
 			err = writeJSONEnv(path, f.Entries, o)
@@ -143,6 +182,8 @@ func (t specTarget) Apply(b *Backup, o Options) (string, error) {
 			err = writeShellBlock(path, f.Entries, o)
 		case "toml-provider":
 			err = writeTOMLProvider(path, f.Entries, o, t.spec.Enabled.RootKey, t.spec.Enabled.RootValue)
+		case "zcode-provider":
+			err = WriteZCodeProvider(path, o)
 		default:
 			err = fmt.Errorf("unknown file kind %q in spec", f.Kind)
 		}
@@ -336,6 +377,9 @@ func enabledFor(t Target, s Spec) bool {
 					return true
 				}
 			}
+		}
+		if e.ZCodeProvider != "" && ZCodePointsAtBrewkeg(resolvePath(e.ZCodeProvider)) {
+			return true
 		}
 		return false
 	}

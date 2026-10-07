@@ -9,7 +9,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/brewkeghq/brewkeg-cli/internal/brewkeg"
+	"github.com/brewkeghq/brewkeg-gateway/internal/brewkeg"
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/options"
 	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
@@ -40,11 +40,14 @@ func main() {
 
 	app := NewApp()
 	err := wails.Run(&options.App{
-		Title:     "Gateway",
-		Width:     600,
-		Height:    580,
-		MinWidth:  520,
-		MinHeight: 460,
+		Title:  "Gateway",
+		Width:  460,
+		Height: 560,
+		// The key field, four service rows and the footer are the whole
+		// window now that there is no primary button. The floor is set by
+		// the service rows: below it the labels start truncating.
+		MinWidth:  420,
+		MinHeight: 470,
 		AssetServer: &assetserver.Options{
 			Assets: assets,
 		},

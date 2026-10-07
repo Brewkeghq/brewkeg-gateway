@@ -9,7 +9,7 @@ import (
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 
-	"github.com/brewkeghq/brewkeg-cli/internal/brewkeg"
+	"github.com/brewkeghq/brewkeg-gateway/internal/brewkeg"
 )
 
 // App is the binding surface the frontend calls. Every method returns plain
@@ -159,32 +159,32 @@ func (a *App) Configure(apiKey string, ids []string, baseURL, mainModel, sonnetM
 			paths = append(paths, r.Paths...)
 		}
 	}
-	out.Restart = brewkeg.RestartHintsFor(ids, paths)
+	// A target that came back with manual steps is not finished, and the user is
+	// about to go into that app and finish it themselves. Bouncing it for the
+	// half we could do — on Claude Desktop that is only `allowDevTools`, while
+	// the gateway profile needs a signed-in Developer menu we cannot reach —
+	// presents as "it restarted but nothing happened", which is exactly what
+	// happened. The steps already end with a quit and reopen.
+	touched := finished(results)
+	out.Restart = brewkeg.RestartHintsFor(touched, paths)
 
 	// Now do it rather than printing a list of things the user will forget to
 	// do. Only apps that were already running are touched.
-	out.Relaunched = brewkeg.Relaunch(brewkeg.RestartAppsFor(allTouched(ids, results)), 8*time.Second)
+	out.Relaunched = brewkeg.Relaunch(brewkeg.RestartAppsFor(touched), 8*time.Second)
 
 	out.Message = summary(added, len(results)-added-failed, failed)
 	return out
 }
 
-// allTouched is the ids a run actually changed, both directions. Restart hints
-// and relaunch have to cover the tools we just disconnected too — a config is
-// read at startup, so a stale Claude Code session keeps using brewkeg long
-// after the file says otherwise.
-func allTouched(ids []string, results []brewkeg.ApplyResult) []string {
-	seen := map[string]bool{}
+// finished is the ids we both wrote to and left nothing for the user to do by
+// hand. A target can succeed with nothing written — Claude Desktop's gateway
+// profile is a manual path until the user creates it — and one can succeed with
+// a prerequisite written but the real work still manual. Neither is ours to
+// bounce.
+func finished(results []brewkeg.ApplyResult) []string {
 	var out []string
-	for _, id := range ids {
-		if !seen[id] {
-			seen[id] = true
-			out = append(out, id)
-		}
-	}
 	for _, r := range results {
-		if r.OK && !seen[r.ID] {
-			seen[r.ID] = true
+		if r.OK && len(r.Paths) > 0 && r.Manual == "" {
 			out = append(out, r.ID)
 		}
 	}

@@ -23,6 +23,7 @@ const ICONS = {
   "claude-cli": "icons/anthropic.svg",
   desktop: "icons/anthropic.svg",
   codex: "icons/openai.svg",
+  zcode: "icons/zcode.png",
 };
 
 const DEMO_STATE = {
@@ -34,6 +35,7 @@ const DEMO_STATE = {
     { id: "claude-cli", label: "Claude Code", installed: true, enabled: false, path: "~/.claude/settings.json" },
     { id: "codex", label: "Codex CLI", installed: true, enabled: true, path: "~/.codex/config.toml" },
     { id: "desktop", label: "Claude Desktop", installed: false, enabled: false, path: "in-app" },
+    { id: "zcode", label: "ZCode", installed: true, enabled: true, path: "~/.zcode/v2/provider_config.json" },
   ],
 };
 
@@ -54,6 +56,8 @@ const DEMO_RESULT = {
 };
 
 const el = (id) => document.getElementById(id);
+// applying guards against a second write starting while one is in flight:
+// two Configure calls racing would each back up the other's partial state.
 let state = null;
 let restartHints = [];
 
@@ -68,7 +72,6 @@ async function boot() {
   el("get-key").addEventListener("click", () => api.OpenDashboard());
   el("peek").addEventListener("click", togglePeek);
   el("undo").addEventListener("click", undo);
-  el("apply").addEventListener("click", apply);
   el("check").addEventListener("click", check);
   el("apikey").addEventListener("input", () => hideCheck());
   el("update").addEventListener("click", () => api.OpenUpdate(el("update").dataset.url));
@@ -135,10 +138,8 @@ async function check() {
     // and "could not reach brewkeg" is not evidence about the key at all.
     const bad = r.rejected;
     line.className = "checkline" + (bad ? " bad" : r.ok ? "" : " warn");
-    updateButton();
-    // A rejected key locks the button outright — there is nothing to run until
-    // a different key is entered.
-    if (bad) el("apply").disabled = true;
+    // A rejected key must not be written into anyone's config, so the machine
+    // refuses it too. All this can do is explain it.
     el("apikey").dataset.verdict = bad ? "rejected" : r.reachable ? "ok" : "unknown";
   } catch (e) {
     showCheck(`Test failed: ${e}`, "bad");
@@ -157,7 +158,6 @@ function showCheck(text, cls) {
 
 function hideCheck() {
   el("checkline").hidden = true;
-  updateButton();
 }
 
 function togglePeek() {
@@ -210,81 +210,102 @@ function render() {
     li.appendChild(row);
     list.appendChild(li);
   }
-  updateButton();
 }
 
-function toggle(id) {
-  const sw = el(`sw-${id}`);
-  const on = sw.getAttribute("aria-checked") !== "true";
-  sw.setAttribute("aria-checked", String(on));
-  sw.closest(".service")?.setAttribute("aria-selected", String(on));
-  updateButton();
-}
-
+// selected is the whole desired state of the machine: every target that should
+// be pointed at brewkeg after this run. Everything is driven off it — the
+// engine adds what is in it and evicts what is not, so a switch being on is not
+// "pending", it is the intent.
 function selected() {
   return state.targets
     .filter((t) => el(`sw-${t.id}`).getAttribute("aria-checked") === "true")
     .map((t) => t.id);
 }
 
-// connected is what the machine actually has right now, captured before the
-// user touches anything. The button is enabled by *difference* from this, not
-// by how many switches are on: "untoggle everything" is a real, useful action,
-// and a button that disables itself the moment the last switch goes off makes
-// disconnecting the one thing this app cannot do.
-function connected() {
-  return state.targets.filter((t) => t.enabled).map((t) => t.id);
+// The switch is the control. Flipping it applies immediately: the desired set
+// of tools IS the selection, so there is nothing left for a separate commit
+// step to mean.
+//
+// Optimistic on purpose — the switch moves first and is put back if the write
+// fails. The alternative (waiting for the round trip) makes the window feel
+// broken, and on a slow connection it looks like the click did nothing at all.
+async function toggle(id) {
+  if (state.applying) return;
+  const sw = el(`sw-${id}`);
+  const row = sw.closest(".service");
+  const on = sw.getAttribute("aria-checked") !== "true";
+  sw.setAttribute("aria-checked", String(on));
+  row?.setAttribute("aria-selected", String(on));
+  await commit(on ? `Connecting ${labelFor(id)}…` : `Disconnecting ${labelFor(id)}…`);
 }
 
-function pendingRemoval() {
-  const on = new Set(connected());
-  return state.targets.filter((t) => on.has(t.id) && !selected().includes(t.id));
-}
-
-function updateButton() {
-  const sel = selected();
-  const dropping = pendingRemoval();
-  const btn = el("apply");
-  const dirty = sel.length !== connected().length || dropping.length > 0;
-
-  if (sel.length === 0 && dropping.length > 0) {
-    btn.textContent = `Disconnect ${dropping.length} tool${dropping.length === 1 ? "" : "s"}`;
-  } else if (sel.length === 0) {
-    btn.textContent = "Connect";
-  } else {
-    btn.textContent = `Connect ${sel.length} tool${sel.length === 1 ? "" : "s"}`;
-  }
-  btn.disabled = !dirty;
-}
-
-async function apply() {
+// commit applies the current selection. A failure restores every switch from
+// the machine's real state rather than assuming what went wrong.
+async function commit(busy) {
   const key = el("apikey").value.trim();
-  // Disconnecting is the one action that carries no key: once the tools are
-  // pointed away from us, nothing is left to authenticate. Demanding a secret
-  // to undo our own edits would lock out exactly the user whose key expired.
-  const disconnectOnly = selected().length === 0 && pendingRemoval().length > 0;
-  if (!key && !disconnectOnly) {
-    say("Paste your API key.", true);
+  const sel = selected();
+  // Turning the last one off carries no key: with every tool pointed away from
+  // us there is nothing left to authenticate, and demanding a secret to undo
+  // our own edits locks out exactly the user whose key just expired.
+  const disconnectingOnly = sel.length === 0;
+  if (!key && !disconnectingOnly) {
+    say("Paste your API key first.", true);
     el("apikey").focus();
     return;
   }
-  const btn = el("apply");
-  btn.disabled = true;
+
+  const before = state.targets.map((t) => t.enabled);
+  state.applying = true;
+  setBusy(busy);
+  document.body.classList.add("busy");
   try {
-    // The Go side re-checks and refuses a rejected key, so a stale verdict here
-    // (or no verdict at all) can never write a bad key into a config.
-    const res = await api.Configure(key, selected(), state.baseUrl, "", "", "");
+    const res = await api.Configure(key, sel, state.baseUrl, "", "", "");
     if (!res.ok && !res.results?.length) {
       showCheck(res.message, res.key?.rejected ? "bad" : "warn");
+      refresh();
       return;
     }
     showDocket(res);
     if (res.warning) say(res.warning);
+    // The machine is the source of truth after a write, not our guess at it.
+    refresh();
   } catch (e) {
     say(`Failed: ${e}`, true);
+    refresh();
   } finally {
-    updateButton();
+    state.applying = false;
+    document.body.classList.remove("busy");
+    setBusy("");
   }
+}
+
+function labelFor(id) {
+  return state.targets.find((t) => t.id === id)?.label ?? id;
+}
+
+// refresh re-reads the machine and redraws the switches from it. This is the
+// only thing that decides what a switch shows after a run, which is why a
+// failed or partial write cannot leave a switch lying about what is on.
+function refresh() {
+  // The module-level `api`, not window.go: in ?demo=1 there is no Wails bridge
+  // and reaching for it directly throws instead of redrawing.
+  api
+    .GetState()
+    .then((s) => {
+      state.baseUrl = s.baseUrl || state.baseUrl;
+      state = { ...s, applying: state.applying };
+      render();
+    })
+    .catch(() => {
+      /* the window can still be closed by hand */
+    });
+}
+
+function setBusy(text) {
+  const box = el("busy");
+  if (!box) return;
+  box.textContent = text;
+  box.hidden = !text;
 }
 
 // A config file is only read when the app starts. Without this the user closes

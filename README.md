@@ -1,6 +1,6 @@
 # brewkeg
 
-Two binaries, one engine, one repo — `github.com/brewkeghq/brewkeg-cli`.
+Two binaries, one engine, one repo — `github.com/brewkeghq/brewkeg-gateway`.
 
 | Binary | Install | Use when |
 |---|---|---|
@@ -21,6 +21,7 @@ Point your tools at brewkeg.          ← Instrument Serif italic, brand headlin
 ┌ SERVICES ─────────────────── 2 selected ┐
 │ 🅰 Claude Code        ~/.claude/settings.json   [on] │
 │ Codex CLI                 ~/.codex/config.toml      [on] │
+│ ZCode                    ~/.zcode/v2/provider_config.json [on] │
 └──────────────────────────────────────────────────────────┘
 ┌ BACKUP 20261007-163657-565            [ BACKED UP ] ┐
 │ ✓ ~/.claude/settings.json                    written │
@@ -84,6 +85,7 @@ installed app backwards.
 |---|---|
 | Claude Code CLI | `~/.claude/settings.json` (`env` block, merged — other keys preserved) + exports in your shell rc, inside a marked block |
 | Codex CLI | `~/.codex/config.toml` — `[model_providers.brewkeg]` table plus the root `model_provider` key, both marked |
+| ZCode | `~/.zcode/v2/provider_config.json` — a provider rule and per-model rules, edited in place. The desktop app, `zcode --web` and the terminal all read this one file |
 | Claude Desktop | Nothing. Its gateway lives in the Developer menu, so both front-ends print the exact steps instead of guessing at a file it does not own. |
 
 A pre-existing `model_provider = "openai"` is commented out rather than deleted,

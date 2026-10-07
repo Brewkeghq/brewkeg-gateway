@@ -10,7 +10,7 @@ import (
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 
-	"github.com/brewkeghq/brewkeg-cli/internal/brewkeg"
+	"github.com/brewkeghq/brewkeg-gateway/internal/brewkeg"
 )
 
 // UpdateInfo is what the window shows in the update banner.
@@ -22,7 +22,7 @@ type UpdateInfo struct {
 	Notes     string `json:"notes,omitempty"`
 }
 
-const releasesAPI = "https://api.github.com/repos/brewkeghq/brewkeg-cli/releases/latest"
+const releasesAPI = "https://api.github.com/repos/brewkeghq/brewkeg-gateway/releases/latest"
 
 // CheckForUpdate asks GitHub for the newest release and compares it with the
 // running binary. A notifier, not a silent self-install: the app never swaps
@@ -79,7 +79,7 @@ func (a *App) OpenUpdate(url string) {
 	runtime.BrowserOpenURL(a.ctx, url)
 }
 
-func releasePage() string { return "https://github.com/brewkeghq/brewkeg-cli/releases/latest" }
+func releasePage() string { return "https://github.com/brewkeghq/brewkeg-gateway/releases/latest" }
 
 func firstLine(s string) string {
 	for _, l := range strings.Split(s, "\n") {

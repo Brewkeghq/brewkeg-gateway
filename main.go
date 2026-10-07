@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/brewkeghq/brewkeg-cli/internal/brewkeg"
+	"github.com/brewkeghq/brewkeg-gateway/internal/brewkeg"
 )
 
 const usage = `brewkeg — configure Claude Code, Codex and Claude Desktop to use brewkeg

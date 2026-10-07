@@ -30,6 +30,21 @@ type Spec struct {
 	Pickers map[string]ModelPickerSpec `json:"pickers,omitempty"`
 }
 
+// ManualStep is a block of instructions that only applies in some states.
+//
+// A fixed script re-tells the user to do things they already did, and the step
+// they *cannot* do — the Developer menu that only exists once Developer Mode is
+// on — gets buried in the middle of a list that looks already-finished. The
+// condition lets the server decide which lines apply; the engine only knows how
+// to answer the question.
+type ManualStep struct {
+	// When is a condition id. Empty means always. Unknown conditions are treated
+	// as "do not apply", so a spec written for a newer app never has a step
+	// skipped because an older engine cannot evaluate it.
+	When  string   `json:"when,omitempty"`
+	Lines []string `json:"lines"`
+}
+
 type TargetSpec struct {
 	ID    string `json:"id"`
 	Label string `json:"label"`
@@ -47,6 +62,9 @@ type TargetSpec struct {
 	// instructions instead, because the setting lives in a GUI we do not own.
 	Files  []FileSpec `json:"files,omitempty"`
 	Manual string     `json:"manual,omitempty"`
+	// ManualSteps is the conditional form of Manual. When present it wins, and
+	// only the blocks whose condition holds are printed.
+	ManualSteps []ManualStep `json:"manualSteps,omitempty"`
 	// RestartApps are the desktop apps that must be cycled for this target's
 	// change to take effect. A config file is read once at launch, so writing
 	// it does nothing until the app comes back.
@@ -63,6 +81,11 @@ type DetectSpec struct {
 	// somewhere different on each OS needs one path per OS, or it looks missing
 	// on two platforms out of three. "os" is the fallback for anything unnamed.
 	FilesByOS map[string]string `json:"filesByOS,omitempty"`
+	// DirsByOS is FilesByOS for directories. Needed because checking a
+	// directory with a file test always fails: Claude Desktop's detect entry
+	// named its support directory, which is not a file, so the tool reported
+	// "not detected" on a machine where it was plainly installed.
+	DirsByOS map[string][]string `json:"dirsByOS,omitempty"`
 }
 
 type EnabledSpec struct {
@@ -79,6 +102,10 @@ type EnabledSpec struct {
 	// these keys with a non-empty value. Used where the config is not an env
 	// bag, e.g. Claude Desktop's inference settings.
 	JSONFileKeys []string `json:"jsonFileKeys,omitempty"`
+	// ZCodeProvider is the path of ZCode's provider registry. The tool is on
+	// when that registry names our providerId. A dedicated field because the
+	// registry is two nested arrays of rule objects — no flat key scan finds it.
+	ZCodeProvider string `json:"zcodeProvider,omitempty"`
 	// NeverDetectable is for GUI-only tools whose config we cannot read.
 	NeverDetectable bool `json:"neverDetectable,omitempty"`
 }
@@ -178,10 +205,13 @@ func DefaultSpec() Spec {
 			},
 			{
 				ID: "desktop", Label: "Claude Desktop", Icon: "anthropic",
-				Detect: DetectSpec{FilesByOS: map[string]string{
-					"darwin":  "Library/Application Support/Claude-3p",
-					"windows": "AppData/Local/Claude-3p",
-					"linux":   ".config/Claude-3p",
+				// A directory, so it has to be checked as one. Naming it under
+				// FilesByOS made the tool report "not detected" on a machine
+				// where the directory plainly existed.
+				Detect: DetectSpec{DirsByOS: map[string][]string{
+					"darwin":  {"Library/Application Support/Claude", "Library/Application Support/Claude-3p"},
+					"windows": {"AppData/Roaming/Claude", "AppData/Local/Claude-3p"},
+					"linux":   {".config/Claude", ".config/Claude-3p"},
 				}},
 				// Detected, not verifiable. We can see the saved inference
 				// configuration, so we CAN write it — see the desktop-3p file
@@ -227,7 +257,46 @@ func DefaultSpec() Spec {
 					Name:     "Claude Desktop",
 					Bins:     []string{"Claude.exe", "claude.exe"},
 				}},
-				Manual: "Open Claude Desktop\nHelp -> Troubleshooting -> Enable Developer Mode, then fully quit and reopen\nDeveloper menu -> Configure Third-Party Inference...\nBase URL: {{baseUrl}}   (no /v1 suffix — Claude Desktop appends it)\nGateway API key: {{apiKey}}\nModels: {{mainModel}}\nApply Changes, then fully quit and reopen the app",
+				ManualSteps: []ManualStep{
+					{
+						// The profile is created for the user now, so there is no
+						// manual step left. Developer Mode only governs whether the
+						// menu is visible in the app — worth saying once if it is
+						// off, because otherwise a picker that does not appear has
+						// no explanation.
+						When: "claude-desktop-developer-mode-off",
+						Lines: []string{
+							"Written to your Claude Desktop configuration. Developer Mode is off, so you will not see the third-party menu:",
+							"  Help -> Troubleshooting -> Enable Developer Mode, then reopen the app",
+						},
+					},
+				},
+			},
+			{
+				// Z.ai's coding agent. The desktop app, `zcode --web` and the
+				// terminal all read one provider registry, so this is a single
+				// write rather than a desktop file and a CLI file.
+				ID:    "zcode",
+				Label: "ZCode",
+				Detect: DetectSpec{
+					Dirs: []string{".zcode/v2"},
+				},
+				Files: []FileSpec{{
+					Paths: map[string]string{
+						"darwin":  ".zcode/v2/provider_config.json",
+						"linux":   ".zcode/v2/provider_config.json",
+						"windows": ".zcode/v2/provider_config.json",
+					},
+					Kind: "zcode-provider",
+				}},
+				Enabled: EnabledSpec{ZCodeProvider: ".zcode/v2/provider_config.json"},
+				RestartApps: []RelaunchApp{{
+					// ZCode's CLI lives inside the app bundle, so matching on the
+					// bundle id is the only reliable way in.
+					BundleID: "dev.zcode.app",
+					Name:     "ZCode",
+					Bins:     []string{"zcode.exe", "zcode"},
+				}},
 			},
 		},
 	}
@@ -323,6 +392,36 @@ func (f FileSpec) PathForOS() string { return pickByOS(f.Paths, f.Path) }
 
 // DetectPaths returns every path worth probing to decide whether the tool is
 // installed here: the per-OS overrides, plus Path when it is not shadowed.
+// DirPaths is DetectPaths for directories, with the same "os" fallback and the
+// same rule that a key naming a non-default path shadows the untargeted list.
+func (d DetectSpec) DirPaths() []string {
+	if len(d.DirsByOS) == 0 {
+		return nil
+	}
+	shadowed := map[string]bool{}
+	for _, list := range d.DirsByOS {
+		for _, v := range list {
+			if v != "" {
+				shadowed[v] = true
+			}
+		}
+	}
+	out := []string{}
+	for _, list := range d.DirsByOS {
+		for _, v := range list {
+			if v != "" {
+				out = append(out, v)
+			}
+		}
+	}
+	for _, v := range d.Dirs {
+		if v != "" && !shadowed[v] {
+			out = append(out, v)
+		}
+	}
+	return out
+}
+
 func (d DetectSpec) DetectPaths() []string {
 	out := make([]string, 0, len(d.Files)+len(d.FilesByOS))
 	shadowed := map[string]bool{}

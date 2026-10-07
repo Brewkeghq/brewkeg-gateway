@@ -90,6 +90,7 @@ export namespace brewkeg {
 	    files?: string[];
 	    bins?: string[];
 	    filesByOS?: Record<string, string>;
+	    dirsByOS?: Record<string, Array<string>>;
 	
 	    static createFrom(source: any = {}) {
 	        return new DetectSpec(source);
@@ -101,6 +102,7 @@ export namespace brewkeg {
 	        this.files = source["files"];
 	        this.bins = source["bins"];
 	        this.filesByOS = source["filesByOS"];
+	        this.dirsByOS = source["dirsByOS"];
 	    }
 	}
 	export class EnabledSpec {
@@ -110,6 +112,7 @@ export namespace brewkeg {
 	    rootKey?: string;
 	    rootValue?: string;
 	    jsonFileKeys?: string[];
+	    zcodeProvider?: string;
 	    neverDetectable?: boolean;
 	
 	    static createFrom(source: any = {}) {
@@ -124,6 +127,7 @@ export namespace brewkeg {
 	        this.rootKey = source["rootKey"];
 	        this.rootValue = source["rootValue"];
 	        this.jsonFileKeys = source["jsonFileKeys"];
+	        this.zcodeProvider = source["zcodeProvider"];
 	        this.neverDetectable = source["neverDetectable"];
 	    }
 	}
@@ -202,6 +206,20 @@ export namespace brewkeg {
 	        this.latencyMs = source["latencyMs"];
 	        this.rejected = source["rejected"];
 	        this.reachable = source["reachable"];
+	    }
+	}
+	export class ManualStep {
+	    when?: string;
+	    lines: string[];
+	
+	    static createFrom(source: any = {}) {
+	        return new ManualStep(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.when = source["when"];
+	        this.lines = source["lines"];
 	    }
 	}
 	export class PickerOption {
@@ -310,6 +328,7 @@ export namespace brewkeg {
 	    enabled: EnabledSpec;
 	    files?: FileSpec[];
 	    manual?: string;
+	    manualSteps?: ManualStep[];
 	    restartApps?: RelaunchApp[];
 	
 	    static createFrom(source: any = {}) {
@@ -326,6 +345,7 @@ export namespace brewkeg {
 	        this.enabled = this.convertValues(source["enabled"], EnabledSpec);
 	        this.files = this.convertValues(source["files"], FileSpec);
 	        this.manual = source["manual"];
+	        this.manualSteps = this.convertValues(source["manualSteps"], ManualStep);
 	        this.restartApps = this.convertValues(source["restartApps"], RelaunchApp);
 	    }
 	

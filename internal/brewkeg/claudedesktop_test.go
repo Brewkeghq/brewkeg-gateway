@@ -40,14 +40,17 @@ func TestAppliedConfigFollowsMeta(t *testing.T) {
 	}
 
 	// Switching profiles must move with it, not stay pinned to the first.
-	write3pProfile(t, "second-profile", `{"inferenceProvider":"gateway"}`)
-	if got := ClaudeDesktopAppliedConfig(); got != filepath.Join(dir, "second-profile.json") {
+	// The second id has to be a real UUID: the app guards every id it reads
+	// with /^[a-f0-9-]{36}$/, so a name like "second-profile" is a config the
+	// app would ignore, and we must not resolve to it either.
+	write3pProfile(t, "b7f2c914-2a55-4d0e-9f31-6c0a5e2d8b47", `{"inferenceProvider":"gateway"}`)
+	if got := ClaudeDesktopAppliedConfig(); got != filepath.Join(dir, "b7f2c914-2a55-4d0e-9f31-6c0a5e2d8b47.json") {
 		t.Fatalf("did not follow appliedId, got %q", got)
 	}
 }
 
-// A machine that has never opened the third-party panel has no profile. We must
-// write nothing rather than invent a _meta.json shape.
+// A machine that has never opened the third-party panel has no profile, and
+// ClaudeDesktopAppliedConfig must say so rather than resolve to something.
 func TestNoProfileMeansNoWrite(t *testing.T) {
 	withTempHome(t)
 	if got := ClaudeDesktopAppliedConfig(); got != "" {
@@ -59,10 +62,11 @@ func TestNoProfileMeansNoWrite(t *testing.T) {
 }
 
 // _meta.json is a file we do not control. An id containing a path separator or
-// ".." must not let the write escape configLibrary/.
+// ".." must not let the write escape configLibrary/. The starting id is a valid
+// UUID so the traversal is the only thing wrong with it.
 func TestAppliedIdCannotEscapeTheDirectory(t *testing.T) {
 	withTempHome(t)
-	dir := write3pProfile(t, "safe", `{}`)
+	dir := write3pProfile(t, "9c1d4e77-2b8a-4f63-91c0-5a3e7d2f6b04", `{}`)
 	if err := os.WriteFile(filepath.Join(dir, "_meta.json"),
 		[]byte(`{"appliedId":"../../../../tmp/pwned"}`), 0o600); err != nil {
 		t.Fatal(err)
@@ -77,7 +81,7 @@ func TestAppliedIdCannotEscapeTheDirectory(t *testing.T) {
 
 func TestMalformedMetaReadsAsNoProfile(t *testing.T) {
 	withTempHome(t)
-	dir := write3pProfile(t, "ok", `{}`)
+	dir := write3pProfile(t, "3f8a1c66-5e40-4b92-8d31-0a7f6e2c9b58", `{}`)
 	if err := os.WriteFile(filepath.Join(dir, "_meta.json"), []byte(`{"appliedId":`), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -90,7 +94,7 @@ func TestMalformedMetaReadsAsNoProfile(t *testing.T) {
 // leave every one of theirs alone.
 func TestGatewayMergeKeepsTheUsersProfile(t *testing.T) {
 	withTempHome(t)
-	write3pProfile(t, "p1", `{
+	write3pProfile(t, "5e1a9f30-7c42-4b18-9d65-2f8a0c3b7e19", `{
   "chatTabEnabled": true,
   "coworkEgressAllowedHosts": ["*"],
   "inferenceProvider": "anthropic",
@@ -147,7 +151,7 @@ func jsonUnmarshalForTest(raw string, v any) error { return json.Unmarshal([]byt
 // why. The lineup therefore has to be asserted as a whole.
 func TestDesktopLineupCoversEveryFamilyThePickerOffers(t *testing.T) {
 	withTempHome(t)
-	write3pProfile(t, "p1", `{"inferenceProvider":"anthropic"}`)
+	write3pProfile(t, "5e1a9f30-7c42-4b18-9d65-2f8a0c3b7e19", `{"inferenceProvider":"anthropic"}`)
 	path := ClaudeDesktopAppliedConfig()
 
 	o := Options{
@@ -201,7 +205,7 @@ func TestDesktopLineupCoversEveryFamilyThePickerOffers(t *testing.T) {
 // engine's job, not the caller's.
 func TestLineupDefaultsToAllThree(t *testing.T) {
 	withTempHome(t)
-	write3pProfile(t, "p1", `{}`)
+	write3pProfile(t, "5e1a9f30-7c42-4b18-9d65-2f8a0c3b7e19", `{}`)
 	o := Options{}.WithDefaults()
 	if o.MainModel == "" || o.SonnetModel == "" || o.FastModel == "" {
 		t.Fatalf("a default lineup has a hole: %+v", o)

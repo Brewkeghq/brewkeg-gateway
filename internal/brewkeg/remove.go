@@ -233,6 +233,9 @@ func removeTarget(t Target, s Spec, b *Backup) (string, error) {
 		if f.Kind == "desktop-3p" {
 			path = ClaudeDesktopAppliedConfig()
 			if path == "" {
+				// Nothing of ours is in it. Do NOT create a profile here to then
+				// strip the keys back out of — that would leave a library the
+				// user never asked for.
 				continue
 			}
 		}
@@ -248,6 +251,8 @@ func removeTarget(t Target, s Spec, b *Backup) (string, error) {
 			changed, err = removeShellBlock(path)
 		case "toml-provider":
 			changed, err = removeTOMLProvider(path, st.spec.Enabled.RootKey)
+		case "zcode-provider":
+			changed, err = RemoveZCodeProvider(path)
 		default:
 			return "", fmt.Errorf("unknown file kind %q in spec", f.Kind)
 		}

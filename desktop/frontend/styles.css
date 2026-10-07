@@ -2,13 +2,13 @@
 
    The palette is the product's own (web2/app/globals.css), vendored so the app
    is identical offline: white paper, #0f1115 ink, #bef264 lime, Geist, Geist
-   Mono, Instrument Serif italic. 600×580 window.
+   Mono, Instrument Serif italic. 460×560 window.
 
    The one deliberate idea: lime means "brewkeg is here, this is on". It appears
-   in exactly four places — the rule by the wordmark, the focus ring, the
-   enabled switch, and the primary button — and nowhere else. That is why the
-   update banner is *not* lime: it is a notice, not a brand moment, and it was
-   the one element competing with the accent by using it at full bleed. */
+   in exactly three places — the rule by the wordmark, the focus ring, and the
+   enabled switch — and nowhere else. That is why the update banner is *not*
+   lime: it is a notice, not a brand moment, and it was the one element
+   competing with the accent by using it at full bleed. */
 
 @font-face {
   font-family: "Geist";
@@ -102,6 +102,12 @@ body {
 }
 
 main { padding: 26px 22px 24px; }
+
+/* An author `display` beats the UA stylesheet's [hidden] { display: none }, so
+   every element carrying the hidden attribute was still painting. The empty
+   checkline's ::before tick rendered as a stray ✓ floating above the service
+   list. One rule makes the attribute mean what it says, everywhere. */
+[hidden] { display: none !important; }
 
 /* -------------------------------------------------------------- masthead */
 
@@ -295,33 +301,23 @@ button { font-family: var(--sans); font-size: 13px; cursor: pointer; }
 
 /* ---------------------------------------------------------------- actions */
 
-.actions { margin: 16px 0 0; }
+.actions { margin: 14px 0 0; }
 
-/* Lime is the brand, so the button that actually does the thing wears it.
-   Ink text on lime is well past every contrast threshold at this size. */
-.primary {
-  width: 100%;
-  height: 44px;
-  padding: 0 16px;
-  border-radius: var(--radius);
-  border: 1px solid var(--accent-deep);
-  background: var(--accent);
-  color: var(--accent-foreground);
-  font-size: 15px;
-  font-weight: 500;
-  letter-spacing: -0.005em;
-  transition: background var(--t) var(--ease), transform var(--t) var(--ease);
-}
-.primary:hover { background: var(--accent-deep); border-color: var(--accent-deep); }
-.primary:active { transform: translateY(0.5px); }
-/* A disabled button should read as absent, not as a dimmed enabled one. */
-.primary:disabled {
-  background: var(--muted);
-  border-color: var(--border);
+/* The switch moved first and the file write is behind it, so the window has to
+   say the write is happening. Without this the switch looks like it worked and
+   then nothing happens for a second, which reads as a dropped click. */
+.busyline {
+  margin: 12px 0 0;
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.02em;
   color: var(--faint);
-  cursor: default;
-  transform: none;
 }
+
+/* One write at a time. Two Configure calls racing would each back up the
+   other's half-finished state, and the docket would name the wrong file. */
+body.busy .service { pointer-events: none; opacity: 0.55; }
+body.busy .switch { transition: none; }
 
 .promise {
   display: flex;

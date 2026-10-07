@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/brewkeghq/brewkeg-cli/internal/brewkeg"
+	"github.com/brewkeghq/brewkeg-gateway/internal/brewkeg"
 )
 
 // sandbox points HOME at a temp dir so these run exactly the code the window
@@ -52,8 +52,8 @@ func TestConfigureThenRestoreIsByteExact(t *testing.T) {
 	app := NewApp()
 
 	state := app.GetState()
-	if len(state.Targets) != 3 {
-		t.Fatalf("expected 3 targets, got %d", len(state.Targets))
+	if len(state.Targets) != len(brewkeg.DefaultSpec().Targets) {
+		t.Fatalf("every spec target should be reported, got %d", len(state.Targets))
 	}
 
 	res := app.Configure("bk_live_testkey123", []string{"claude-cli", "codex"}, state.BaseURL, "", "", "")
@@ -94,6 +94,59 @@ func TestConfigureRefusesWithoutKey(t *testing.T) {
 	res := app.Configure("   ", []string{"codex"}, "https://brewkeg.dev", "", "", "")
 	if res.OK || res.Message == "" {
 		t.Fatal("a blank key must be refused with a message the window can show")
+	}
+}
+
+// A target can succeed while still needing the user by hand: on Claude Desktop
+// the gateway profile lives behind a signed-in Developer menu, so we write the
+// `allowDevTools` prerequisite and print the steps. Bouncing the app for that
+// half presents as "it restarted but nothing happened" — which is exactly what
+// happened. A target with manual steps must not be restarted or relaunched.
+func TestConfigureDoesNotRestartATargetItDidNotWriteTo(t *testing.T) {
+	sandbox(t)
+	app := NewApp()
+
+	// No Claude-3p/configLibrary in the sandbox, so the desktop target can only
+	// write developer_settings.json and reports OK with manual steps.
+	res := app.Configure("bk_live_testkey123", []string{"claude-cli", "desktop"}, "https://brewkeg.dev", "", "", "")
+	if !res.OK {
+		t.Fatal(res.Message)
+	}
+
+	desktop := false
+	for _, r := range res.Results {
+		if r.ID == "desktop" {
+			desktop = true
+			if r.Manual == "" {
+				t.Fatal("a target we cannot fully write to must carry the manual steps")
+			}
+		}
+	}
+	if !desktop {
+		t.Fatal("desktop target missing from results")
+	}
+
+	for _, h := range res.Restart {
+		if strings.Contains(strings.ToLower(h.What), "desktop") {
+			t.Fatalf("Claude Desktop was scheduled for restart despite having manual steps: %+v", res.Restart)
+		}
+	}
+	for _, r := range res.Relaunched {
+		if strings.Contains(strings.ToLower(r.App), "desktop") {
+			t.Fatalf("Claude Desktop was relaunched despite having manual steps: %+v", res.Relaunched)
+		}
+	}
+
+	// The one we really did finish is still restarted — the guard must not
+	// disable the feature it was added for.
+	found := false
+	for _, h := range res.Restart {
+		if strings.Contains(strings.ToLower(h.What), "claude") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("the target we did finish lost its restart hint: %+v", res.Restart)
 	}
 }
 
@@ -189,16 +242,24 @@ func TestDesktopWritesDevToolsSwitchButStillPrintsGatewaySteps(t *testing.T) {
 	}
 
 	for _, r := range res.Results {
-		if r.Manual == "" {
-			t.Error("the gateway half is still a GUI — it must print steps")
+		// We create the configuration library ourselves now, so the target
+		// finishes what it set out to do. Anything still printed is a caveat
+		// about the app's UI — never an instruction to build the profile by
+		// hand, which would make this whole path pointless.
+		if strings.Contains(r.Manual, "Configure Third-Party Inference") {
+			t.Errorf("we now write the profile directly, but still ask for it by hand: %q", r.Manual)
 		}
-		if !strings.Contains(r.Manual, "Configure Third-Party Inference") {
-			t.Errorf("manual steps lost their instruction: %q", r.Manual)
+		if strings.Contains(strings.ToLower(r.Manual), "sign in") {
+			t.Errorf("manual steps tell a signed-in user to sign in: %q", r.Manual)
 		}
 	}
 
 	if !brewkeg.FileExists(dev) {
 		t.Fatalf("allowDevTools should have been written to %s", dev)
+	}
+	// And the gateway half is no longer a GUI step: the profile now exists.
+	if !brewkeg.FileExists(brewkeg.ClaudeDesktopAppliedConfig()) {
+		t.Fatal("the Claude Desktop configuration library was not created")
 	}
 	var got map[string]any
 	if err := json.Unmarshal([]byte(readFileString(t, dev)), &got); err != nil {

@@ -190,4 +190,4 @@ func MaskKey(k string) string {
 
 // RepoURL is where the CLI and desktop app source lives. Shown in the app so
 // anyone can read exactly what touches their machine.
-const RepoURL = "https://github.com/brewkeghq/brewkeg-cli"
+const RepoURL = "https://github.com/brewkeghq/brewkeg-gateway"

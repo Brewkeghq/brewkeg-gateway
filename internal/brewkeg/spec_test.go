@@ -230,7 +230,8 @@ func TestSpecUsesTheNamesTheServerSends(t *testing.T) {
 		Targets []struct {
 			ID     string `json:"id"`
 			Detect struct {
-				FilesByOS map[string]string `json:"filesByOS"`
+				FilesByOS map[string]string   `json:"filesByOS"`
+				DirsByOS  map[string][]string `json:"dirsByOS"`
 			} `json:"detect"`
 			Files []struct {
 				Paths   map[string]string `json:"paths"`
@@ -246,7 +247,11 @@ func TestSpecUsesTheNamesTheServerSends(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	for _, want := range []string{"filesByOS", "paths", "kind", "entries", "jsonFileKeys"} {
+	// detect.filesByOS is deliberately absent: every built-in target that has
+	// a per-OS detect path names a directory, and a directory checked with a
+	// file test never matches. The field is still honoured for an older server
+	// spec that still sends it, which is why it is not deleted.
+	for _, want := range []string{"dirsByOS", "paths", "kind", "entries", "jsonFileKeys"} {
 		if !strings.Contains(string(raw), `"`+want+`"`) {
 			t.Errorf("built-in spec never emits %q — the server may have renamed it", want)
 		}
@@ -258,8 +263,13 @@ func TestSpecUsesTheNamesTheServerSends(t *testing.T) {
 			continue
 		}
 		desktop = true
-		if len(tg.Detect.FilesByOS) != 3 {
-			t.Errorf("desktop detect.filesByOS has %d entries, want 3 (darwin/windows/linux)", len(tg.Detect.FilesByOS))
+		if len(tg.Detect.DirsByOS) != 3 {
+			t.Errorf("desktop detect.dirsByOS has %d entries, want 3 (darwin/windows/linux)", len(tg.Detect.DirsByOS))
+		}
+		// A directory checked with a file test is a tool that reports itself
+		// missing on a machine where it is installed.
+		if len(tg.Detect.FilesByOS) != 0 {
+			t.Errorf("desktop detect.names directories in filesByOS: %v", tg.Detect.FilesByOS)
 		}
 		if len(tg.Files) != 2 {
 			t.Fatalf("desktop files = %d, want 2 (the 3p config and the dev-tools switch)", len(tg.Files))

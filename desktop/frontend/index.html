@@ -34,10 +34,18 @@
         <ul class="services" id="services"></ul>
       </section>
 
+      <!-- No primary button. A switch is the whole control: turning one on adds
+           that tool, turning it off removes it, and each change is backed up
+           first and can be undone from the docket. A separate "Connect 3 tools"
+           step meant the user had to compose a selection and then commit it,
+           which is work the switches already did. -->
+      <!-- Announced, not just shown: a switch that moves immediately needs to
+           say why nothing else is happening while the file is written. -->
+      <p class="busyline" id="busy" role="status" aria-live="polite" hidden></p>
+
       <div class="actions">
-        <button class="primary" id="apply" type="button">Connect</button>
         <p class="promise">
-          <span id="promise">Backed up first.</span>
+          <span id="promise">Switch a tool on to point it at brewkeg.</span>
           <span class="version" id="version"></span>
         </p>
       </div>
@@ -61,7 +69,7 @@
       <p class="note" id="note" hidden></p>
 
       <p class="foot">
-        <button class="linkish" id="repo" type="button">github.com/brewkeg/brewkeg-cli</button>
+        <button class="linkish" id="repo" type="button">github.com/brewkeghq/brewkeg-gateway</button>
       </p>
     </main>
 

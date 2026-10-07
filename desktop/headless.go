@@ -6,7 +6,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/brewkeghq/brewkeg-cli/internal/brewkeg"
+	"github.com/brewkeghq/brewkeg-gateway/internal/brewkeg"
 )
 
 // headless is `gateway --apply`: no window, no prompts, everything from

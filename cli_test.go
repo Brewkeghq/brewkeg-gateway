@@ -11,7 +11,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/brewkeghq/brewkeg-cli/internal/brewkeg"
+	"github.com/brewkeghq/brewkeg-gateway/internal/brewkeg"
 )
 
 func TestBlockIdempotent(t *testing.T) {
