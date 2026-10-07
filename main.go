@@ -11,7 +11,7 @@ const usage = `brewkeg — configure Claude Code, Codex and Claude Desktop to us
 
 Usage:
   brewkeg setup                 Interactive setup (backs up first, restorable)
-  brewkeg setup --api-key KEY   Non-interactive
+  brewkeg setup --yes           No prompts: read ~/.brewkeg/config.json
   brewkeg status                Show what is configured
   brewkeg backups               List backups
   brewkeg restore               Undo the most recent setup
@@ -26,9 +26,18 @@ Options:
   --backup ID          which backup to restore
   --dry-run            show what restore would do, change nothing
   --skip-check         write config without testing the key first
+  -y, --yes            never prompt; take the key and targets from the file
+
+Config file (~/.brewkeg/config.json) — optional, so setup can be scripted:
+  { "apiKey": "bk_live_...", "targets": ["claude-cli", "codex"] }
+Flags win over the file; the file wins over a prompt.
 
 Every file brewkeg touches is copied to ~/.brewkeg/backups/<id>/ first, so
 "brewkeg restore" puts your machine back exactly as it was.
+
+The desktop app is the same engine with a window. It reads the same config
+file:  gateway --apply   configures now, no window
+                        gateway --undo    restores the latest backup
 `
 
 func main() {

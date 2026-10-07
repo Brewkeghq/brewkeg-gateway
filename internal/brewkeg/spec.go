@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 )
@@ -54,6 +55,10 @@ type DetectSpec struct {
 	Dirs  []string `json:"dirs,omitempty"`
 	Files []string `json:"files,omitempty"`
 	Bins  []string `json:"bins,omitempty"`
+	// FilesByOS is the same idea as FileSpec.Paths: an app whose config lives
+	// somewhere different on each OS needs one path per OS, or it looks missing
+	// on two platforms out of three. "os" is the fallback for anything unnamed.
+	FilesByOS map[string]string `json:"filesByOS,omitempty"`
 }
 
 type EnabledSpec struct {
@@ -66,15 +71,26 @@ type EnabledSpec struct {
 	TomlTable string `json:"tomlTable,omitempty"`
 	RootKey   string `json:"rootKey,omitempty"`
 	RootValue string `json:"rootValue,omitempty"`
+	// JSONFileKeys: the tool is on when a top-level JSON config has any of
+	// these keys with a non-empty value. Used where the config is not an env
+	// bag, e.g. Claude Desktop's inference settings.
+	JSONFileKeys []string `json:"jsonFileKeys,omitempty"`
 	// NeverDetectable is for GUI-only tools whose config we cannot read.
 	NeverDetectable bool `json:"neverDetectable,omitempty"`
 }
 
 type FileSpec struct {
-	// Path is relative to $HOME, or absolute.
+	// Path is relative to $HOME, or absolute. It is the default; use Paths when
+	// the same setting lives somewhere different per OS.
 	Path string `json:"path"`
+	// Paths overrides Path per runtime.GOOS ("darwin", "windows", "linux"),
+	// with "os" as the catch-all. Claude Desktop is the reason this exists: its
+	// support directory is ~/Library/Application Support on macOS,
+	// ~/AppData/Roaming on Windows and ~/.config on Linux.
+	Paths map[string]string `json:"paths,omitempty"`
 	// Kind selects the safe editor the engine uses:
 	//   json-env     — merge into the "env" object of a JSON file
+	//   json-plain   — merge top-level keys of a JSON file
 	//   shell-block  — a marked block of exports in an rc file
 	//   toml-provider— a marked block, or an in-place edit of the table
 	Kind string `json:"kind"`
@@ -148,10 +164,51 @@ func DefaultSpec() Spec {
 			},
 			{
 				ID: "desktop", Label: "Claude Desktop", Icon: "anthropic",
-				Detect:  DetectSpec{Files: []string{"Library/Application Support/Claude/config.json"}},
-				Enabled: EnabledSpec{NeverDetectable: true},
+				Detect: DetectSpec{FilesByOS: map[string]string{
+					"darwin":  "Library/Application Support/Claude-3p",
+					"windows": "AppData/Local/Claude-3p",
+					"linux":   ".config/Claude-3p",
+				}},
+				// Detected, not verifiable. We can see the saved inference
+				// configuration, so we CAN write it — see the desktop-3p file
+				// below. What we still cannot do is prove the app is using it
+				// until it is relaunched.
+				Enabled: EnabledSpec{JSONFileKeys: []string{"inferenceGatewayBaseUrl"}},
 				Note:    "set in the app",
-				Manual:  "Open Claude Desktop\nDeveloper menu -> Configure Third-Party Inference...\nBase URL: {{baseUrl}}\nGateway API key: {{apiKey}}\nApply Changes, then fully quit and reopen the app",
+				Files: []FileSpec{{
+					// The saved third-party configuration. Its path is not
+					// fixed: it is the file named by configLibrary/_meta.json,
+					// so the engine resolves it and edits the configuration
+					// the user already has applied. Skipped entirely when
+					// there is none.
+					Kind: "desktop-3p",
+					Entries: []KVSpec{
+						{Name: "inferenceProvider", Value: `"gateway"`},
+						{Name: "inferenceGatewayBaseUrl", Value: `"{{baseUrl}}"`},
+						{Name: "inferenceCredentialKind", Value: `"static"`},
+						{Name: "inferenceGatewayAuthScheme", Value: `"Bearer"`},
+						{Name: "inferenceGatewayApiKey", Value: `"{{apiKey}}"`},
+						// Model discovery off: an explicit list is what makes
+						// the connection test meaningful, and discovery on a
+						// gateway can return ids the account cannot use.
+						{Name: "modelDiscoveryEnabled", Value: "false"},
+						{Name: "inferenceModels", Value: `["{{mainModel}}","{{fastModel}}"]`},
+					},
+				}, {
+					// The support directory differs per OS. Paths are all
+					// relative to $HOME, so there is no leading slash and no
+					// sudo anywhere in this.
+					Paths: map[string]string{
+						"darwin":  "Library/Application Support/Claude/developer_settings.json",
+						"windows": "AppData/Roaming/Claude/developer_settings.json",
+						"linux":   ".config/Claude/developer_settings.json",
+					},
+					Kind: "json-plain",
+					Entries: []KVSpec{
+						{Name: "allowDevTools", Value: "true"},
+					},
+				}},
+				Manual: "Open Claude Desktop\nHelp -> Troubleshooting -> Enable Developer Mode, then fully quit and reopen\nDeveloper menu -> Configure Third-Party Inference...\nBase URL: {{baseUrl}}   (no /v1 suffix — Claude Desktop appends it)\nGateway API key: {{apiKey}}\nModels: {{mainModel}}\nApply Changes, then fully quit and reopen the app",
 			},
 		},
 	}
@@ -230,6 +287,43 @@ func claudeEnvEntries() []KVSpec {
 }
 
 // resolvePath expands a spec path against $HOME.
+// PathForOS picks this file's path for the OS we are running on.
+func (f FileSpec) PathForOS() string { return pickByOS(f.Paths, f.Path) }
+
+// DetectPaths returns every path worth probing to decide whether the tool is
+// installed here: the per-OS overrides, plus Path when it is not shadowed.
+func (d DetectSpec) DetectPaths() []string {
+	out := make([]string, 0, len(d.Files)+len(d.FilesByOS))
+	shadowed := map[string]bool{}
+	for _, v := range d.FilesByOS {
+		if v != "" {
+			shadowed[v] = true
+		}
+	}
+	for _, v := range d.FilesByOS {
+		if v != "" {
+			out = append(out, v)
+		}
+	}
+	for _, f := range d.Files {
+		if !shadowed[f] {
+			out = append(out, f)
+		}
+	}
+	return out
+}
+
+// pickByOS resolves a per-OS map, falling back to the OS-agnostic default.
+func pickByOS(m map[string]string, fallback string) string {
+	if v, ok := m[runtime.GOOS]; ok && v != "" {
+		return v
+	}
+	if v, ok := m["os"]; ok && v != "" {
+		return v
+	}
+	return fallback
+}
+
 func resolvePath(p string) string {
 	if p == "" {
 		return ""

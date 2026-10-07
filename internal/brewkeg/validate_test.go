@@ -93,3 +93,70 @@ func TestCheckKeyUsesTheCheapestModel(t *testing.T) {
 		t.Errorf("probe must ask for a single token, got %s", body)
 	}
 }
+
+// Only a definitive rejection may stop a config write. Every other verdict —
+// including the ones the key is fine in — must let the write through, or the
+// app refuses to work on a bad network day.
+func TestOnlyRejectionBlocksAWrite(t *testing.T) {
+	cases := []struct {
+		name     string
+		status   int
+		wantBlk  bool
+		wantRech bool
+		wantMsg  string
+	}{
+		{"works", 200, false, true, ""},
+		{"rejected", 401, true, true, "rejected"},
+		{"forbidden", 403, true, true, "rejected"},
+		{"out of quota", 429, false, true, "valid"},
+		{"probe refused", 400, false, true, "valid"},
+		// The gateway is down. This is the case the old two-state check got
+		// catastrophically wrong: it reported "check the key" for a 502.
+		{"gateway 500", 500, false, true, "trouble"},
+		{"gateway 502", 502, false, true, "trouble"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := fakeGateway(t, tc.status, `{"error":{"message":"nope"}}`)
+			got := CheckKey(context.Background(), srv.URL, "bk_live_x")
+			if got.Blocked() != tc.wantBlk {
+				t.Errorf("Blocked() = %v, want %v (message: %s)", got.Blocked(), tc.wantBlk, got.Message)
+			}
+			if got.Reachable != tc.wantRech {
+				t.Errorf("Reachable = %v, want %v", got.Reachable, tc.wantRech)
+			}
+			if tc.wantMsg != "" && !strings.Contains(got.Message, tc.wantMsg) {
+				t.Errorf("message %q should mention %q", got.Message, tc.wantMsg)
+			}
+		})
+	}
+}
+
+// Unreachable is not reachable-and-satisfied: no HTTP response means no verdict
+// on the key at all.
+func TestUnreachableGatewayDoesNotBlameTheKey(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	url := srv.URL
+	srv.Close() // nothing is listening now
+
+	got := CheckKey(context.Background(), url, "bk_live_x")
+	if got.Reachable {
+		t.Error("Reachable should be false when the request never landed")
+	}
+	if got.Blocked() {
+		t.Errorf("a dead gateway must never be reported as a bad key: %s", got.Message)
+	}
+	if !strings.Contains(got.Message, "Could not reach") {
+		t.Errorf("message = %q, want it to say we could not reach brewkeg", got.Message)
+	}
+}
+
+func TestEmptyKeyIsNeitherValidNorBlocked(t *testing.T) {
+	got := CheckKey(context.Background(), "https://brewkeg.invalid", "")
+	if got.Blocked() {
+		t.Error("an empty key must not be reported as rejected — nothing was sent")
+	}
+	if got.Message != "Paste your API key." {
+		t.Errorf("message = %q", got.Message)
+	}
+}

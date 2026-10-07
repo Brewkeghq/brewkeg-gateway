@@ -21,7 +21,21 @@ type KeyCheck struct {
 	Status    int    `json:"status"`
 	Message   string `json:"message"`
 	LatencyMS int64  `json:"latencyMs"`
+
+	// Rejected is the only verdict that must stop a write: the gateway saw
+	// the key and refused it. Baking a rejected key into a tool config breaks
+	// that tool until someone edits the file by hand.
+	Rejected bool `json:"rejected"`
+
+	// Reachable says we got an answer at all. False means the request never
+	// landed — no wifi, DNS, gateway down, a 502 from the edge. That is NOT
+	// evidence about the key, so it must never be reported as a bad key.
+	Reachable bool `json:"reachable"`
 }
+
+// Blocked reports whether this verdict must stop a config write. Only a
+// definitive rejection blocks; "we could not ask" is not the same answer.
+func (k KeyCheck) Blocked() bool { return k.Rejected }
 
 // checkModel is the cheapest catalog model, so validation costs a rounding
 // error. It is a real catalog id, which the gateway's allowlist accepts.
@@ -35,6 +49,7 @@ const checkModel = "claude-haiku-4-5"
 // and the account has room.
 func CheckKey(ctx context.Context, baseURL, apiKey string) KeyCheck {
 	start := time.Now()
+	// Reachable starts false and is set the moment any HTTP response arrives.
 	res := KeyCheck{Message: "Could not reach brewkeg."}
 
 	apiKey = strings.TrimSpace(apiKey)
@@ -69,6 +84,7 @@ func CheckKey(ctx context.Context, baseURL, apiKey string) KeyCheck {
 		return res
 	}
 	defer resp.Body.Close()
+	res.Reachable = true
 
 	// Read only what we need; a long error body is not worth parsing.
 	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
@@ -81,6 +97,7 @@ func CheckKey(ctx context.Context, baseURL, apiKey string) KeyCheck {
 		res.Message = fmt.Sprintf("Key works — %s replied in %dms.", checkModel, res.LatencyMS)
 
 	case resp.StatusCode == 401 || resp.StatusCode == 403:
+		res.Rejected = true
 		res.Message = "That key was rejected by brewkeg."
 
 	case resp.StatusCode == 429:
@@ -99,8 +116,14 @@ func CheckKey(ctx context.Context, baseURL, apiKey string) KeyCheck {
 		res.Valid = true
 		res.Message = "Key is valid, but the check request was refused by the gateway."
 
+	case resp.StatusCode >= 500:
+		// The gateway is broken, the key is not. Never blame the key for this.
+		res.Message = fmt.Sprintf("brewkeg is having trouble (%d). Nothing was changed — try again in a moment.", resp.StatusCode)
+
 	default:
-		res.Message = fmt.Sprintf("Gateway returned %d. Try again in a moment.", resp.StatusCode)
+		// An unexpected 4xx. We asked and got an answer, but we do not
+		// recognise it as an auth verdict, so we do not treat it as one.
+		res.Message = fmt.Sprintf("Gateway returned %d. Check the key and try again.", resp.StatusCode)
 	}
 	return res
 }

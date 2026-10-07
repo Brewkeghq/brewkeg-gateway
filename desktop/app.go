@@ -23,11 +23,11 @@ func (a *App) startup(ctx context.Context) { a.ctx = ctx }
 
 // State is everything the window needs on open, in one round trip.
 type State struct {
-	Version   string                 `json:"version"`
-	BaseURL   string                 `json:"baseUrl"`
-	Dashboard string                 `json:"dashboard"`
-	HasKey    bool                   `json:"hasKey"`
-	MaskedKey string                 `json:"maskedKey"`
+	Version   string `json:"version"`
+	BaseURL   string `json:"baseUrl"`
+	Dashboard string `json:"dashboard"`
+	HasKey    bool   `json:"hasKey"`
+	MaskedKey string `json:"maskedKey"`
 	// ApiKey is the remembered key, sent so the field opens filled in. This is
 	// a local desktop app talking to its own window over the Wails bridge; it
 	// is the same value already sitting in the user's tool configs.
@@ -77,6 +77,11 @@ type ConfigureResult struct {
 	// file is only read at startup, so skipping this looks like we did nothing.
 	Restart []brewkeg.RestartHint `json:"restart,omitempty"`
 	Message string                `json:"message"`
+	// Warning is shown when we went ahead without a usable verdict — the
+	// gateway was unreachable, so the key was never actually proven good.
+	Warning string `json:"warning,omitempty"`
+	// Key is the validation result that gated (or failed to gate) this write.
+	Key brewkeg.KeyCheck `json:"key"`
 }
 
 // Configure backs up, then writes the selected targets. The backup is saved
@@ -96,9 +101,25 @@ func (a *App) Configure(apiKey string, ids []string, baseURL, mainModel, fastMod
 		return ConfigureResult{Message: "Turn on at least one service."}
 	}
 
+	// Never write a key we have been told is bad. A rejected key written into
+	// ~/.codex/config.toml or ~/.claude/settings.json breaks that tool with an
+	// auth error the user has to go and edit by hand — and our own backup
+	// cannot save them, because the config they were using is already broken.
+	//
+	// "Could not reach brewkeg" is NOT a rejection: it says nothing about the
+	// key, and blocking on it would make the app unusable offline. That case
+	// proceeds with a warning.
+	check := brewkeg.CheckKey(a.context(), brewkeg.BaseURL(), apiKey)
+	if check.Blocked() {
+		return ConfigureResult{Message: check.Message + " Nothing was changed.", Key: check}
+	}
+
 	opts := brewkeg.Options{APIKey: apiKey, BaseURL: baseURL, MainModel: mainModel, FastModel: fastModel}
 	b, results, err := brewkeg.Apply(ids, opts)
-	out := ConfigureResult{BackupID: b.ID, BackupDir: brewkeg.BackupDir(b.ID), Results: results}
+	out := ConfigureResult{BackupID: b.ID, BackupDir: brewkeg.BackupDir(b.ID), Results: results, Key: check}
+	if !check.Reachable {
+		out.Warning = "Could not test the key — brewkeg did not answer. Saved anyway."
+	}
 	if err != nil {
 		out.Message = fmt.Sprintf("Backup could not be saved: %v", err)
 		return out

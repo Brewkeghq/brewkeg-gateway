@@ -130,8 +130,12 @@ async function check() {
   try {
     const r = await api.CheckKey(key);
     line.textContent = r.message;
-    line.className = "checkline" + (r.ok ? "" : r.valid ? " warn" : " bad");
-    el("apply").disabled = selected().length === 0 || !r.ok;
+    // Only a rejection locks the button. Out of quota is still the right key,
+    // and "could not reach brewkeg" is not evidence about the key at all.
+    const bad = r.rejected;
+    line.className = "checkline" + (bad ? " bad" : r.ok ? "" : " warn");
+    el("apply").disabled = selected().length === 0 || bad;
+    el("apikey").dataset.verdict = bad ? "rejected" : r.reachable ? "ok" : "unknown";
   } catch (e) {
     showCheck(`Test failed: ${e}`, "bad");
   } finally {
@@ -227,7 +231,15 @@ async function apply() {
   const btn = el("apply");
   btn.disabled = true;
   try {
-    showDocket(await api.Configure(key, selected(), state.baseUrl, "", ""));
+    // The Go side re-checks and refuses a rejected key, so a stale verdict here
+    // (or no verdict at all) can never write a bad key into a config.
+    const res = await api.Configure(key, selected(), state.baseUrl, "", "");
+    if (!res.ok && !res.results?.length) {
+      showCheck(res.message, res.key?.rejected ? "bad" : "warn");
+      return;
+    }
+    showDocket(res);
+    if (res.warning) say(res.warning);
   } catch (e) {
     say(`Failed: ${e}`, true);
   } finally {

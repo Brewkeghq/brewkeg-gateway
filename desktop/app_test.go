@@ -1,6 +1,9 @@
 package main
 
 import (
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -11,8 +14,19 @@ import (
 
 // sandbox points HOME at a temp dir so these run exactly the code the window
 // calls, without touching the developer's real ~/.claude and ~/.codex.
+//
+// It also stands up a gateway that accepts any key: Configure now refuses to
+// write a rejected key, so a test that is not about key validation needs a
+// reachable gateway or it would be blocked for the wrong reason. A test about
+// the gate itself overrides BREWKEG_BASE_URL afterwards.
 func sandbox(t *testing.T) string {
 	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"id":"msg_1"}`))
+	}))
+	t.Cleanup(srv.Close)
+	t.Setenv("BREWKEG_BASE_URL", srv.URL)
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("USERPROFILE", home)
@@ -91,23 +105,133 @@ func TestConfigureRefusesWithNothingSelected(t *testing.T) {
 	}
 }
 
-func TestDesktopTargetNeverWritesAFile(t *testing.T) {
+// Claude Desktop is half-writable. The developer switch is a plain JSON file we
+// own and must write for the user; the gateway lives in a GUI store we cannot
+// read, so that half is still printed as steps. This test keeps the boundary
+// honest in both directions.
+func TestDesktopWritesDevToolsSwitchButStillPrintsGatewaySteps(t *testing.T) {
 	home := sandbox(t)
+	dev := filepath.Join(home, "Library", "Application Support", "Claude", "developer_settings.json")
+	if err := os.MkdirAll(filepath.Dir(dev), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
 	app := NewApp()
 	res := app.Configure("bk_live_testkey123", []string{"desktop"}, "https://brewkeg.dev", "", "")
 	if !res.OK {
-		t.Fatalf("desktop should succeed with instructions: %s", res.Message)
+		t.Fatalf("desktop should succeed: %s", res.Message)
 	}
+
 	for _, r := range res.Results {
 		if r.Manual == "" {
-			t.Fatal("desktop must return manual steps — it has no config file we own")
+			t.Error("the gateway half is still a GUI — it must print steps")
 		}
-		if len(r.Paths) > 0 {
-			t.Fatalf("desktop must not claim to write files, got %v", r.Paths)
+		if !strings.Contains(r.Manual, "Configure Third-Party Inference") {
+			t.Errorf("manual steps lost their instruction: %q", r.Manual)
 		}
 	}
-	if brewkeg.FileExists(filepath.Join(home, "Library", "Application Support", "Claude", "config.json")) {
-		t.Fatal("desktop target wrote a file it does not own")
+
+	if !brewkeg.FileExists(dev) {
+		t.Fatalf("allowDevTools should have been written to %s", dev)
+	}
+	var got map[string]any
+	if err := json.Unmarshal([]byte(readFileString(t, dev)), &got); err != nil {
+		t.Fatalf("developer_settings.json is not valid JSON: %v", err)
+	}
+	// A string "true" is not a boolean to Electron, and it would fail silently.
+	if v, ok := got["allowDevTools"].(bool); !ok || !v {
+		t.Errorf("allowDevTools = %#v, want the boolean true", got["allowDevTools"])
+	}
+}
+
+// The switch must not swallow anything the user put there themselves.
+func TestDesktopDevToolsMergeIsSurgical(t *testing.T) {
+	home := sandbox(t)
+	dev := filepath.Join(home, "Library", "Application Support", "Claude", "developer_settings.json")
+	if err := os.MkdirAll(filepath.Dir(dev), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	original := "{\n  \"someOtherSetting\": 42,\n  \"nested\": {\"keep\": true}\n}\n"
+	if err := os.WriteFile(dev, []byte(original), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	app := NewApp()
+	if res := app.Configure("bk_live_testkey123", []string{"desktop"}, "https://brewkeg.dev", "", ""); !res.OK {
+		t.Fatal(res.Message)
+	}
+
+	var got map[string]any
+	if err := json.Unmarshal([]byte(readFileString(t, dev)), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got["someOtherSetting"] != float64(42) {
+		t.Errorf("unrelated key was changed: %#v", got["someOtherSetting"])
+	}
+	if _, ok := got["nested"].(map[string]any); !ok {
+		t.Errorf("nested object was lost: %#v", got["nested"])
+	}
+	if got["allowDevTools"] != true {
+		t.Errorf("allowDevTools was not set: %#v", got)
+	}
+
+	// And undo puts their file back byte for byte.
+	if _, err := brewkeg.LatestBackup(); err == nil {
+		if b, err := brewkeg.LatestBackup(); err == nil {
+			if _, err := b.Restore(false); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	if got := readFileString(t, dev); got != original {
+		t.Errorf("restore was not byte-exact:\ngot:  %q\nwant: %q", got, original)
+	}
+}
+
+// Windows and Linux put Claude Desktop somewhere else entirely. One spec has
+// to cover all three or the app silently does nothing on two platforms.
+func TestDesktopPathIsCorrectPerOS(t *testing.T) {
+	var target brewkeg.TargetSpec
+	for _, t := range brewkeg.DefaultSpec().Targets {
+		if t.ID == "desktop" {
+			target = t
+		}
+	}
+	if len(target.Files) != 2 {
+		t.Fatalf("desktop should write two files, got %d", len(target.Files))
+	}
+	f := target.Files[1] // the developer-mode switch; Files[0] is the 3p config
+
+	got := map[string]string{
+		"darwin":  f.Paths["darwin"],
+		"windows": f.Paths["windows"],
+		"linux":   f.Paths["linux"],
+	}
+	want := map[string]string{
+		"darwin":  "Library/Application Support/Claude/developer_settings.json",
+		"windows": "AppData/Roaming/Claude/developer_settings.json",
+		"linux":   ".config/Claude/developer_settings.json",
+	}
+	// Windows is %LOCALAPPDATA% for the *inference* config — not %APPDATA%.
+	// Check the support dir the engine resolves for that, separately.
+	for os_, path := range want {
+		if got[os_] != path {
+			t.Errorf("%s path = %q, want %q", os_, got[os_], path)
+		}
+		if strings.HasPrefix(got[os_], "/") {
+			t.Errorf("%s path %q is absolute — that would need sudo and writes outside $HOME", os_, got[os_])
+		}
+		// Every path must land inside $HOME: an absolute or escaping path
+		// would need sudo and could write somewhere the user never agreed to.
+		if !strings.HasPrefix(filepath.Clean(brewkeg.HomeJoin(got[os_])), filepath.Clean(brewkeg.Home())) {
+			t.Errorf("%s path %q resolves outside $HOME", os_, got[os_])
+		}
+	}
+	if f.Kind != "json-plain" {
+		t.Errorf("kind = %q, want json-plain", f.Kind)
+	}
+	if !strings.HasSuffix(brewkeg.ClaudeDesktopConfigDir(), filepath.Join("configLibrary")) {
+		t.Errorf("config dir = %q, want it to end in configLibrary", brewkeg.ClaudeDesktopConfigDir())
 	}
 }
 
@@ -202,4 +326,87 @@ func readFileString(t *testing.T, p string) string {
 func sandboxHOME(t *testing.T) string {
 	t.Helper()
 	return os.Getenv("HOME")
+}
+
+// The headline rule: a key the gateway refuses must never reach a config file.
+// The config would then be pointing every tool at an auth error, and the
+// backup we took is a backup of a working setup we have already replaced.
+func TestRejectedKeyWritesNothing(t *testing.T) {
+	home := sandbox(t)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+	defer srv.Close()
+	t.Setenv("BREWKEG_BASE_URL", srv.URL)
+
+	app := NewApp()
+	res := app.Configure("bk_live_definitely_wrong", []string{"claude-cli", "codex"}, srv.URL, "", "")
+
+	if res.OK {
+		t.Fatal("a rejected key must not be allowed to save")
+	}
+	if !strings.Contains(res.Message, "rejected") {
+		t.Errorf("message = %q, want it to say the key was rejected", res.Message)
+	}
+
+	if got := readFileString(t, filepath.Join(home, ".claude", "settings.json")); got != "{\n  \"theme\": \"dark\"\n}\n" {
+		t.Errorf("settings.json was modified by a rejected key:\n%s", got)
+	}
+	want := "model = \"gpt-5\"\n\n[tui]\ntheme = \"dark\"\n"
+	if got := readFileString(t, filepath.Join(home, ".codex", "config.toml")); got != want {
+		t.Errorf("config.toml was modified by a rejected key:\n%s", got)
+	}
+	if brewkeg.FileExists(brewkeg.KeyStorePath()) {
+		t.Error("a rejected key must not be remembered")
+	}
+	if brewkeg.FileExists(brewkeg.BackupsRoot()) {
+		t.Error("nothing was written, so there is nothing to back up")
+	}
+}
+
+// A gateway outage must not read as a bad key. The write proceeds, loudly.
+func TestUnreachableGatewayStillWrites(t *testing.T) {
+	home := sandbox(t)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	url := srv.URL
+	srv.Close() // nothing listening: no verdict available
+
+	t.Setenv("BREWKEG_BASE_URL", url)
+	app := NewApp()
+
+	res := app.Configure("bk_live_untested", []string{"codex"}, url, "", "")
+	if !res.OK {
+		t.Fatalf("an outage must not block setup: %s", res.Message)
+	}
+	if res.Warning == "" {
+		t.Error("saving an untested key must say so")
+	}
+	if !strings.Contains(readFileString(t, filepath.Join(home, ".codex", "config.toml")), "bk_live_untested") {
+		t.Error("the config should still have been written")
+	}
+}
+
+// 429 is the gateway saying "valid key, no credit" — a different problem from a
+// wrong key, and it must not stop someone wiring up a tool they will top up
+// later.
+func TestOutOfQuotaKeyIsStillWritten(t *testing.T) {
+	home := sandbox(t)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusTooManyRequests)
+		_, _ = w.Write([]byte(`{"error":{"message":"quota exhausted"}}`))
+	}))
+	defer srv.Close()
+	t.Setenv("BREWKEG_BASE_URL", srv.URL)
+
+	app := NewApp()
+	res := app.Configure("bk_live_valid_nocredit", []string{"codex"}, srv.URL, "", "")
+	if !res.OK {
+		t.Fatalf("a valid key with no quota should still save: %s", res.Message)
+	}
+	if res.Warning != "" {
+		t.Errorf("warning = %q, want none — the key was proven good", res.Warning)
+	}
+	if !strings.Contains(readFileString(t, filepath.Join(home, ".codex", "config.toml")), "bk_live_valid_nocredit") {
+		t.Error("config should have been written")
+	}
 }

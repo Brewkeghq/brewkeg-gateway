@@ -215,3 +215,115 @@ func TestEmptyPickerLeavesFileAlone(t *testing.T) {
 		t.Errorf("an empty picker must not clear the user's options:\n%s", got)
 	}
 }
+
+// The spec is the contract between web2/lib/client-config.ts and this package.
+// A field renamed on one side decodes to nothing on the other, and the app
+// quietly falls back to its built-in copy — which is exactly the drift this
+// design is supposed to make impossible. Pin the wire names.
+func TestSpecUsesTheNamesTheServerSends(t *testing.T) {
+	withTempHome(t)
+	raw, err := json.Marshal(DefaultSpec())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var doc struct {
+		Targets []struct {
+			ID     string `json:"id"`
+			Detect struct {
+				FilesByOS map[string]string `json:"filesByOS"`
+			} `json:"detect"`
+			Files []struct {
+				Paths   map[string]string `json:"paths"`
+				Kind    string            `json:"kind"`
+				Entries []struct {
+					Name  string `json:"name"`
+					Value string `json:"value"`
+				} `json:"entries"`
+			} `json:"files"`
+		} `json:"targets"`
+	}
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, want := range []string{"filesByOS", "paths", "kind", "entries", "jsonFileKeys"} {
+		if !strings.Contains(string(raw), `"`+want+`"`) {
+			t.Errorf("built-in spec never emits %q — the server may have renamed it", want)
+		}
+	}
+
+	var desktop bool
+	for _, tg := range doc.Targets {
+		if tg.ID != "desktop" {
+			continue
+		}
+		desktop = true
+		if len(tg.Detect.FilesByOS) != 3 {
+			t.Errorf("desktop detect.filesByOS has %d entries, want 3 (darwin/windows/linux)", len(tg.Detect.FilesByOS))
+		}
+		if len(tg.Files) != 2 {
+			t.Fatalf("desktop files = %d, want 2 (the 3p config and the dev-tools switch)", len(tg.Files))
+		}
+		// The inference configuration, edited in place in the saved profile.
+		gw := tg.Files[0]
+		if gw.Kind != "desktop-3p" {
+			t.Errorf("gateway kind = %q, want desktop-3p", gw.Kind)
+		}
+		wantGW := map[string]string{
+			"inferenceProvider":       `"gateway"`,
+			"inferenceGatewayBaseUrl": `"{{baseUrl}}"`,
+			"inferenceCredentialKind": `"static"`,
+			"inferenceGatewayApiKey":  `"{{apiKey}}"`,
+			"modelDiscoveryEnabled":   "false",
+		}
+		got := map[string]string{}
+		for _, e := range gw.Entries {
+			got[e.Name] = e.Value
+		}
+		for k, v := range wantGW {
+			if got[k] != v {
+				t.Errorf("gateway entry %s = %s, want %s", k, got[k], v)
+			}
+		}
+		if got["inferenceModels"] != `["{{mainModel}}","{{fastModel}}"]` {
+			t.Errorf("inferenceModels = %s", got["inferenceModels"])
+		}
+
+		// The developer-mode switch.
+		f := tg.Files[1]
+		if f.Kind != "json-plain" {
+			t.Errorf("devtools kind = %q", f.Kind)
+		}
+		if len(f.Paths) != 3 {
+			t.Errorf("devtools paths has %d entries, want 3", len(f.Paths))
+		}
+		if len(f.Entries) != 1 || f.Entries[0].Name != "allowDevTools" || f.Entries[0].Value != "true" {
+			t.Errorf("devtools entries = %+v, want allowDevTools=true", f.Entries)
+		}
+	}
+	if !desktop {
+		t.Fatal("no desktop target in the built-in spec")
+	}
+}
+
+// allowDevTools must land as a JSON boolean. A quoted "true" is a different
+// value to Electron and fails with no error message anywhere.
+func TestTypedValueKeepsJSONTypes(t *testing.T) {
+	cases := []struct {
+		in   string
+		want any
+	}{
+		{"true", true},
+		{"false", false},
+		{"null", nil},
+		{"42", float64(42)},
+		{`"hello"`, "hello"},
+		{"not json at all", "not json at all"},
+		{"", ""},
+	}
+	for _, tc := range cases {
+		if got := typedValue(tc.in); got != tc.want {
+			t.Errorf("typedValue(%q) = %#v, want %#v", tc.in, got, tc.want)
+		}
+	}
+}

@@ -4,6 +4,8 @@ package main
 // package so the CLI and the desktop app are both covered by the same suite.
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -115,4 +117,103 @@ func TestRestoreDeletesFileBrewkegCreated(t *testing.T) {
 	if _, err := os.Stat(rc); !os.IsNotExist(err) {
 		t.Fatal("file brewkeg created should have been deleted on restore")
 	}
+}
+
+// `brewkeg setup --yes` is the no-clicks path: everything comes from
+// ~/.brewkeg/config.json and nothing is asked. It must also never write when
+// the key is refused, which is the same gate the window uses.
+func TestSetupYesRunsFromTheConfigFileAlone(t *testing.T) {
+	home := cliSandbox(t)
+
+	srv := newAcceptingGateway(t)
+	t.Setenv("BREWKEG_BASE_URL", srv.URL)
+
+	if err := brewkeg.SaveUserConfig(brewkeg.UserConfig{
+		APIKey:  "bk_live_yes_mode_0001",
+		Targets: []string{"codex"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if code := runSetup([]string{"--yes"}); code != 0 {
+		t.Fatalf("setup --yes exited %d", code)
+	}
+	got := readString(t, filepath.Join(home, ".codex", "config.toml"))
+	if !strings.Contains(got, "bk_live_yes_mode_0001") {
+		t.Fatalf("--yes did not write the key from the file:\n%s", got)
+	}
+	// The Claude config must be untouched — the file named only codex.
+	if claude := readString(t, filepath.Join(home, ".claude", "settings.json")); strings.Contains(claude, "brewkeg") {
+		t.Errorf("setup --yes configured a tool the config file did not name:\n%s", claude)
+	}
+}
+
+// No config file and no key: --yes must refuse rather than fall back to a
+// prompt, because there is nobody there to answer it.
+func TestSetupYesWithoutAKeyRefuses(t *testing.T) {
+	cliSandbox(t)
+	if code := runSetup([]string{"--yes"}); code == 0 {
+		t.Fatal("--yes with no key and no config file must not succeed")
+	}
+}
+
+// A config naming a tool that no longer exists still configures the ones that
+// do. Deleting a target must not strand the file.
+func TestSetupYesIgnoresUnknownTargets(t *testing.T) {
+	home := cliSandbox(t)
+	srv := newAcceptingGateway(t)
+	t.Setenv("BREWKEG_BASE_URL", srv.URL)
+
+	if err := brewkeg.SaveUserConfig(brewkeg.UserConfig{
+		APIKey:  "bk_live_yes_mode_0001",
+		Targets: []string{"retired-tool", "codex"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if code := runSetup([]string{"--yes"}); code != 0 {
+		t.Fatalf("setup --yes exited %d", code)
+	}
+	if got := readString(t, filepath.Join(home, ".codex", "config.toml")); !strings.Contains(got, "bk_live_yes_mode_0001") {
+		t.Fatal("the known target should still have been configured")
+	}
+}
+
+func cliSandbox(t *testing.T) string {
+	t.Helper()
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	t.Setenv("SHELL", "/bin/zsh")
+	for _, d := range []string{".codex", ".claude"} {
+		if err := os.MkdirAll(filepath.Join(home, d), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(home, ".codex", "config.toml"), []byte("model = \"gpt-5\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(home, ".claude", "settings.json"), []byte("{\n  \"theme\": \"dark\"\n}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return home
+}
+
+// newAcceptingGateway answers the key probe the way a healthy brewkeg does.
+func newAcceptingGateway(t *testing.T) *httptest.Server {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"id":"msg_1"}`))
+	}))
+	t.Cleanup(srv.Close)
+	return srv
+}
+
+func readString(t *testing.T, p string) string {
+	t.Helper()
+	b, err := os.ReadFile(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(b)
 }

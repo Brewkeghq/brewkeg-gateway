@@ -87,6 +87,7 @@ export namespace brewkeg {
 	    dirs?: string[];
 	    files?: string[];
 	    bins?: string[];
+	    filesByOS?: Record<string, string>;
 	
 	    static createFrom(source: any = {}) {
 	        return new DetectSpec(source);
@@ -97,6 +98,7 @@ export namespace brewkeg {
 	        this.dirs = source["dirs"];
 	        this.files = source["files"];
 	        this.bins = source["bins"];
+	        this.filesByOS = source["filesByOS"];
 	    }
 	}
 	export class EnabledSpec {
@@ -105,6 +107,7 @@ export namespace brewkeg {
 	    tomlTable?: string;
 	    rootKey?: string;
 	    rootValue?: string;
+	    jsonFileKeys?: string[];
 	    neverDetectable?: boolean;
 	
 	    static createFrom(source: any = {}) {
@@ -118,6 +121,7 @@ export namespace brewkeg {
 	        this.tomlTable = source["tomlTable"];
 	        this.rootKey = source["rootKey"];
 	        this.rootValue = source["rootValue"];
+	        this.jsonFileKeys = source["jsonFileKeys"];
 	        this.neverDetectable = source["neverDetectable"];
 	    }
 	}
@@ -137,6 +141,7 @@ export namespace brewkeg {
 	}
 	export class FileSpec {
 	    path: string;
+	    paths?: Record<string, string>;
 	    kind: string;
 	    entries?: KVSpec[];
 	    optional?: boolean;
@@ -148,6 +153,7 @@ export namespace brewkeg {
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.path = source["path"];
+	        this.paths = source["paths"];
 	        this.kind = source["kind"];
 	        this.entries = this.convertValues(source["entries"], KVSpec);
 	        this.optional = source["optional"];
@@ -178,6 +184,8 @@ export namespace brewkeg {
 	    status: number;
 	    message: string;
 	    latencyMs: number;
+	    rejected: boolean;
+	    reachable: boolean;
 	
 	    static createFrom(source: any = {}) {
 	        return new KeyCheck(source);
@@ -190,6 +198,8 @@ export namespace brewkeg {
 	        this.status = source["status"];
 	        this.message = source["message"];
 	        this.latencyMs = source["latencyMs"];
+	        this.rejected = source["rejected"];
+	        this.reachable = source["reachable"];
 	    }
 	}
 	export class PickerOption {
@@ -372,6 +382,8 @@ export namespace main {
 	    results: brewkeg.ApplyResult[];
 	    restart?: brewkeg.RestartHint[];
 	    message: string;
+	    warning?: string;
+	    key: brewkeg.KeyCheck;
 	
 	    static createFrom(source: any = {}) {
 	        return new ConfigureResult(source);
@@ -385,6 +397,8 @@ export namespace main {
 	        this.results = this.convertValues(source["results"], brewkeg.ApplyResult);
 	        this.restart = this.convertValues(source["restart"], brewkeg.RestartHint);
 	        this.message = source["message"];
+	        this.warning = source["warning"];
+	        this.key = this.convertValues(source["key"], brewkeg.KeyCheck);
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {

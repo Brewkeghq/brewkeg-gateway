@@ -58,7 +58,7 @@ func (t specTarget) Installed() bool {
 			return true
 		}
 	}
-	for _, f := range t.spec.Detect.Files {
+	for _, f := range t.spec.Detect.DetectPaths() {
 		if FileExists(resolvePath(f)) {
 			return true
 		}
@@ -76,10 +76,10 @@ func (t specTarget) DetectPath() string {
 		return ""
 	}
 	for _, f := range t.spec.Files {
-		if f.Path == "" {
+		if f.PathForOS() == "" {
 			continue
 		}
-		return resolvePath(f.Path)
+		return resolvePath(f.PathForOS())
 	}
 	return ""
 }
@@ -98,8 +98,8 @@ func (t specTarget) Apply(b *Backup, o Options) (string, error) {
 
 	for _, f := range t.spec.Files {
 		path := ""
-		if f.Path != "" {
-			path = resolvePath(f.Path)
+		if f.PathForOS() != "" {
+			path = resolvePath(f.PathForOS())
 		} else if f.Kind == "shell-block" {
 			path = ShellRC()
 			if path == "" {
@@ -112,10 +112,25 @@ func (t specTarget) Apply(b *Backup, o Options) (string, error) {
 			return "", err
 		}
 
+		// A path the engine has to discover rather than be told.
+		if f.Kind == "desktop-3p" {
+			path = ClaudeDesktopAppliedConfig()
+			if path == "" {
+				// No saved configuration yet — the user has never opened the
+				// third-party panel. Print the steps instead of inventing a
+				// _meta.json shape we have never seen.
+				continue
+			}
+		}
+
 		var err error
 		switch f.Kind {
 		case "json-env":
 			err = writeJSONEnv(path, f.Entries, o)
+		case "json-plain":
+			err = writeJSONPlain(path, f.Entries, o)
+		case "desktop-3p":
+			err = writeJSONPlain(path, f.Entries, o)
 		case "shell-block":
 			err = writeShellBlock(path, f.Entries, o)
 		case "toml-provider":
@@ -298,6 +313,9 @@ func enabledFor(t Target, s Spec) bool {
 			return false
 		}
 		if len(e.JSONEnvKeys) > 0 && len(SettingsEnvKeysAny(t.DetectPath(), e.JSONEnvKeys)) > 0 {
+			return true
+		}
+		if len(e.JSONFileKeys) > 0 && JSONHasAnyKey(ClaudeDesktopAppliedConfig(), e.JSONFileKeys) {
 			return true
 		}
 		if e.ShellBlock && len(ShellRCsWithBrewkegBlock()) > 0 {
@@ -548,4 +566,65 @@ func RestartHintsFor(ids []string, changedPaths []string) []RestartHint {
 		hints = append(hints, RestartHint{"Your terminal", "open a new window"})
 	}
 	return hints
+}
+
+// writeJSONPlain merges brewkeg's keys into the top level of a JSON file,
+// preserving every other key. This is for config that is not a bag of
+// environment variables — Claude Desktop's developer_settings.json is a flat
+// object of switches.
+func writeJSONPlain(path string, entries []KVSpec, o Options) error {
+	doc := map[string]any{}
+	if raw := ReadFile(path); strings.TrimSpace(raw) != "" {
+		if err := json.Unmarshal([]byte(raw), &doc); err != nil {
+			return fmt.Errorf("%s is not valid JSON — fix or move it, then re-run", path)
+		}
+	}
+	for _, e := range entries {
+		doc[e.Name] = typedValue(expand(e.Value, o))
+	}
+	out, err := json.MarshalIndent(doc, "", "  ")
+	if err != nil {
+		return err
+	}
+	return WriteFile(path, string(out)+"\n")
+}
+
+// typedValue keeps a spec value's JSON type instead of stringifying it.
+//
+// This matters more than it looks: "allowDevTools": "true" is a string to
+// Electron, which is a different thing from a boolean, and the app would keep
+// ignoring the setting with no error anywhere. A bare true/false/null/number
+// stays literal; anything unparseable is written as the string it is.
+func typedValue(v string) any {
+	if v == "" {
+		return ""
+	}
+	if strings.HasPrefix(v, `"`) && strings.HasSuffix(v, `"`) && len(v) >= 2 {
+		return unquote(v)
+	}
+	var parsed any
+	if err := json.Unmarshal([]byte(v), &parsed); err == nil {
+		return parsed
+	}
+	return v
+}
+
+// JSONHasAnyKey reports whether a JSON file has any of these top-level keys set
+// to a non-empty value. An empty file path means "no config to read", which is
+// false, not an error.
+func JSONHasAnyKey(path string, keys []string) bool {
+	raw := ReadFile(path)
+	if strings.TrimSpace(raw) == "" {
+		return false
+	}
+	var doc map[string]any
+	if json.Unmarshal([]byte(raw), &doc) != nil {
+		return false
+	}
+	for _, k := range keys {
+		if v, ok := doc[k]; ok && v != nil && v != "" {
+			return true
+		}
+	}
+	return false
 }
