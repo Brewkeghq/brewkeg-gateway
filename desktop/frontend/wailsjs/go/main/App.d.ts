@@ -9,6 +9,8 @@ export function CheckKey(arg1:string):Promise<brewkeg.KeyCheck>;
 
 export function Configure(arg1:string,arg2:Array<string>,arg3:string,arg4:string,arg5:string):Promise<main.ConfigureResult>;
 
+export function CopyToClipboard(arg1:string):Promise<void>;
+
 export function GetState():Promise<main.State>;
 
 export function OpenDashboard():Promise<void>;

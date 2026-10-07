@@ -11,6 +11,7 @@ const api = real ?? {
   CheckKey: async () => ({ ok: true, valid: true, status: 200, message: "Key works — claude-haiku-4-5 in 412ms.", latencyMs: 412 }),
   CheckForUpdate: async () => ({ available: true, current: "0.1.0", latest: "0.2.0", url: "#", notes: "Adds OpenCode" }),
   OpenUpdate: () => {},
+  CopyToClipboard: () => {},
   OpenRepo: () => {},
   Configure: async () => DEMO_RESULT,
   Restore: async () => "~/.claude/settings.json — restored original\n~/.zshrc — removed",
@@ -39,6 +40,11 @@ const DEMO_RESULT = {
   ok: true,
   backupId: "20261007-163657",
   message: "Connected 2 tools.",
+  restart: [
+    { what: "Claude Code", action: "quit and reopen" },
+    { what: "Claude Desktop", action: "quit and reopen" },
+    { what: "Your terminal", action: "open a new window" },
+  ],
   results: [
     { id: "claude-cli", label: "Claude Code", ok: true, paths: ["~/.claude/settings.json", "~/.zshrc"], manual: "" },
     { id: "desktop", label: "Claude Desktop", ok: true, paths: [], manual: "Developer → Configure Third-Party Inference…\nBase URL: https://brewkeg.dev" },
@@ -47,6 +53,7 @@ const DEMO_RESULT = {
 
 const el = (id) => document.getElementById(id);
 let state = null;
+let restartHints = [];
 
 boot().catch((e) => say(`Could not start: ${e}`, true));
 
@@ -64,6 +71,7 @@ async function boot() {
   el("apikey").addEventListener("input", () => hideCheck());
   el("update").addEventListener("click", () => api.OpenUpdate(el("update").dataset.url));
   el("repo").addEventListener("click", () => api.OpenRepo());
+  el("copy-restart").addEventListener("click", copyRestart);
   el("get-key").title = `Get your API key at ${state.baseUrl}/dashboard`;
   refreshSpec();
   if (state.maskedKey) {
@@ -222,6 +230,31 @@ async function apply() {
   }
 }
 
+// A config file is only read when the app starts. Without this the user closes
+// the window, sees no change, and assumes brewkeg failed.
+function showRestart(hints) {
+  const box = el("restart");
+  const list = el("restart-list");
+  list.innerHTML = "";
+  if (!hints || !hints.length) {
+    box.hidden = true;
+    return;
+  }
+  for (const h of hints) {
+    const li = document.createElement("li");
+    li.textContent = `${h.what} — ${h.action}`;
+    list.appendChild(li);
+  }
+  box.hidden = false;
+}
+
+function copyRestart() {
+  const text = ["Restart these to apply:", ...restartHints.map((h) => `• ${h.what} — ${h.action}`)].join("\n");
+  api.CopyToClipboard(text);
+  el("copy-restart").textContent = "Copied";
+  setTimeout(() => (el("copy-restart").textContent = "Copy"), 1500);
+}
+
 function showDocket(r) {
   el("backup-id").textContent = r.backupId;
   const lines = el("docket-lines");
@@ -246,6 +279,8 @@ function showDocket(r) {
     li.append(mark, body, where);
     lines.appendChild(li);
   }
+  restartHints = r.restart || [];
+  showRestart(restartHints);
   el("docket").hidden = false;
   // The promise line is now what the docket is showing — don't say it twice.
   el("promise").hidden = true;
@@ -260,6 +295,8 @@ async function undo() {
     state = await api.GetState();
     render();
     el("docket").hidden = true;
+    el("restart").hidden = true;
+    restartHints = [];
     say("Reverted.");
   } catch (e) {
     say(`Failed: ${e}`, true);

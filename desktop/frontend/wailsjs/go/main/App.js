@@ -14,6 +14,10 @@ export function Configure(arg1, arg2, arg3, arg4, arg5) {
   return window['go']['main']['App']['Configure'](arg1, arg2, arg3, arg4, arg5);
 }
 
+export function CopyToClipboard(arg1) {
+  return window['go']['main']['App']['CopyToClipboard'](arg1);
+}
+
 export function GetState() {
   return window['go']['main']['App']['GetState']();
 }

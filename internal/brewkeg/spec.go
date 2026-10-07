@@ -116,6 +116,7 @@ func expand(v string, o Options) string {
 func DefaultSpec() Spec {
 	return Spec{
 		Version: 1,
+		Pickers: DefaultPickers(),
 		Targets: []TargetSpec{
 			{
 				ID: "claude-cli", Label: "Claude Code", Icon: "anthropic",
@@ -199,6 +200,23 @@ func FetchSpec(ctx context.Context, baseURL string) (Spec, error) {
 		return DefaultSpec(), fmt.Errorf("server spec v%d is older than the built-in v%d", spec.Version, DefaultSpec().Version)
 	}
 	return spec, nil
+}
+
+// DefaultPickers replaces Claude Code's model picker with brewkeg's catalogue.
+// Kept in step with what the server serves; the server's copy wins when it is
+// reachable, so the two can never disagree about which models exist.
+func DefaultPickers() map[string]ModelPickerSpec {
+	return map[string]ModelPickerSpec{
+		"claude-cli": {
+			Path:    ".claude/settings.json",
+			Replace: true,
+			Options: []PickerOption{
+				{Model: "claude-opus-5", Label: "Opus 5 · brewkeg", Description: "Deepest work on hard codebases · 1M context"},
+				{Model: "claude-sonnet-5", Label: "Sonnet 5 · brewkeg", Description: "Everyday coding · 1M context"},
+				{Model: "claude-haiku-4-5", Label: "Haiku 4.5 · brewkeg", Description: "Quick checks and edits · 200K context"},
+			},
+		},
+	}
 }
 
 // claudeEnvEntries are the four variables that point Claude Code at brewkeg.

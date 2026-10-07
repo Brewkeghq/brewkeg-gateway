@@ -68,7 +68,10 @@ type ConfigureResult struct {
 	BackupID  string                `json:"backupId"`
 	BackupDir string                `json:"backupDir"`
 	Results   []brewkeg.ApplyResult `json:"results"`
-	Message   string                `json:"message"`
+	// Restart lists what the user must reopen for the change to take. A config
+	// file is only read at startup, so skipping this looks like we did nothing.
+	Restart []brewkeg.RestartHint `json:"restart,omitempty"`
+	Message string                `json:"message"`
 }
 
 // Configure backs up, then writes the selected targets. The backup is saved
@@ -101,6 +104,15 @@ func (a *App) Configure(apiKey string, ids []string, baseURL, mainModel, fastMod
 		return out
 	}
 	out.OK = true
+
+	var paths []string
+	for _, r := range results {
+		if r.OK {
+			paths = append(paths, r.Paths...)
+		}
+	}
+	out.Restart = brewkeg.RestartHintsFor(ids, paths)
+
 	n := len(results) - failed
 	if failed > 0 {
 		out.Message = fmt.Sprintf("Configured %d of %d services. %d failed — see details.", n, len(results), failed)
@@ -164,6 +176,12 @@ func (a *App) RefreshSpec() (brewkeg.Spec, error) {
 // so a typo never reaches the user's config files.
 func (a *App) CheckKey(apiKey string) brewkeg.KeyCheck {
 	return brewkeg.CheckKey(a.context(), brewkeg.BaseURL(), apiKey)
+}
+
+// CopyToClipboard puts text on the system clipboard, so the restart list can be
+// pasted rather than retyped.
+func (a *App) CopyToClipboard(text string) {
+	runtime.ClipboardSetText(a.ctx, text)
 }
 
 // OpenRepo sends the user to the source. The app edits their dotfiles and makes

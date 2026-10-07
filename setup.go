@@ -95,27 +95,32 @@ func runSetup(args []string) int {
 		return 1
 	}
 
+	if hints := brewkeg.RestartHintsFor(ids, pathsOf(results)); len(hints) > 0 {
+		fmt.Println("\n  Restart these to pick up the change:")
+		for _, h := range hints {
+			fmt.Printf("    • %s — %s\n", h.What, h.Action)
+		}
+	}
+
 	fmt.Printf("\n  ✔ Backup saved: %s\n", brewkeg.BackupDir(b.ID))
 	fmt.Println("  Undo anytime with:  brewkeg restore")
 
 	fmt.Println()
-	enabled := map[string]bool{}
-	for _, r := range results {
-		enabled[r.ID] = r.OK
-	}
-	if enabled["claude-cli"] {
-		fmt.Println("  Restart your terminal, then verify:")
-		fmt.Println(`    curl -s https://brewkeg.dev/v1/messages -H "Authorization: Bearer $ANTHROPIC_AUTH_TOKEN" \`)
-		fmt.Println(`      -H "content-type: application/json" \`)
-		fmt.Println(`      -d '{"model":"claude-opus-5","max_tokens":16,"messages":[{"role":"user","content":"PONG"}]}'`)
-	}
-	if enabled["codex"] {
-		fmt.Println("  Verify codex:  codex exec --skip-git-repo-check \"Reply with: PONG\"")
-	}
-	fmt.Println()
 	fmt.Println("  All set up. 🎉")
 	fmt.Println()
 	return 0
+}
+
+// pathsOf collects the files a run actually touched, so the restart hints know
+// whether the user's shell was involved.
+func pathsOf(results []brewkeg.ApplyResult) []string {
+	var out []string
+	for _, r := range results {
+		if r.OK {
+			out = append(out, r.Paths...)
+		}
+	}
+	return out
 }
 
 func looksLikeKey(k string) bool {

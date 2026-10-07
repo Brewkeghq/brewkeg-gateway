@@ -338,3 +338,51 @@ func TestNoCacheToClearIsNotAnError(t *testing.T) {
 		t.Fatalf("a machine with no cache must still configure cleanly: %v", err)
 	}
 }
+
+// A user who closes the window and sees no change assumes we broke something,
+// so naming what to reopen is part of the job, not a nicety.
+func TestRestartHintsNameEveryChangedThing(t *testing.T) {
+	hints := RestartHintsFor(
+		[]string{"claude-cli", "codex"},
+		[]string{"~/.claude/settings.json", "~/.zshrc", "~/.codex/config.toml"},
+	)
+	want := map[string]string{
+		"Claude Code":   "quit and reopen",
+		"Codex CLI":     "quit and reopen",
+		"Your terminal": "open a new window",
+	}
+	got := map[string]string{}
+	for _, h := range hints {
+		got[h.What] = h.Action
+	}
+	for what, action := range want {
+		if got[what] != action {
+			t.Errorf("missing or wrong hint for %q: got %q want %q (all: %+v)", what, got[what], action, hints)
+		}
+	}
+}
+
+// Writing only to settings.json means no shell restart is needed — telling a
+// user to open a new terminal for nothing trains them to ignore the panel.
+func TestNoShellRestartWithoutShellEdits(t *testing.T) {
+	hints := RestartHintsFor([]string{"codex"}, []string{"~/.codex/config.toml"})
+	for _, h := range hints {
+		if h.What == "Your terminal" {
+			t.Fatalf("shell was not touched, so no terminal hint: %+v", hints)
+		}
+	}
+}
+
+// The reverse: an rc file was written, so the terminal must be named.
+func TestTerminalHintOnlyWhenShellTouched(t *testing.T) {
+	hints := RestartHintsFor([]string{"claude-cli"}, []string{"~/.claude/settings.json", "~/.config/fish/config.fish"})
+	found := false
+	for _, h := range hints {
+		if h.What == "Your terminal" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("a shell rc was written, so the terminal hint is required: %+v", hints)
+	}
+}

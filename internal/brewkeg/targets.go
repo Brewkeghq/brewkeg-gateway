@@ -491,3 +491,54 @@ func runtimeIsWindows() bool { return isWindows() }
 var tomlKeyRe = regexp.MustCompile(`^[A-Za-z0-9_.-]+$`)
 
 var _ = tomlKeyRe
+
+/* ------------------------------------------------------------------ restart */
+
+// RestartHint is one "you need to do this for the change to take" line.
+type RestartHint struct {
+	// What is the thing that has to change, e.g. "Claude Code".
+	What string `json:"what"`
+	// Action is the shortest true instruction, e.g. "quit and reopen".
+	Action string `json:"action"`
+}
+
+// RestartHintsFor lists what has to be restarted after configuring these
+// targets. Nothing here is decoration: a config file is only read at process
+// start, so a user who skips this sees no change and assumes we broke it.
+//
+// The shell is the easy one to miss — we wrote exports into their rc file, and
+// an already-open terminal still holds the old values.
+func RestartHintsFor(ids []string, changedPaths []string) []RestartHint {
+	have := func(id string) bool {
+		for _, x := range ids {
+			if x == id {
+				return true
+			}
+		}
+		return false
+	}
+	hasPath := func(sub string) bool {
+		for _, p := range changedPaths {
+			if strings.Contains(p, sub) {
+				return true
+			}
+		}
+		return false
+	}
+
+	var hints []RestartHint
+	if have("claude-cli") {
+		hints = append(hints, RestartHint{"Claude Code", "quit and reopen"})
+	}
+	if have("codex") {
+		hints = append(hints, RestartHint{"Codex CLI", "quit and reopen"})
+	}
+	if have("desktop") {
+		hints = append(hints, RestartHint{"Claude Desktop", "quit and reopen"})
+	}
+	if hasPath(".zshrc") || hasPath(".bashrc") || hasPath(".bash_profile") ||
+		hasPath("config.fish") || hasPath("config.nu") || hasPath(".ps1") {
+		hints = append(hints, RestartHint{"Your terminal", "open a new window"})
+	}
+	return hints
+}

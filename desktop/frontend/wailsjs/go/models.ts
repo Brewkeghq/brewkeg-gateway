@@ -243,6 +243,20 @@ export namespace brewkeg {
 		}
 	}
 	
+	export class RestartHint {
+	    what: string;
+	    action: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new RestartHint(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.what = source["what"];
+	        this.action = source["action"];
+	    }
+	}
 	export class TargetSpec {
 	    id: string;
 	    label: string;
@@ -356,6 +370,7 @@ export namespace main {
 	    backupId: string;
 	    backupDir: string;
 	    results: brewkeg.ApplyResult[];
+	    restart?: brewkeg.RestartHint[];
 	    message: string;
 	
 	    static createFrom(source: any = {}) {
@@ -368,6 +383,7 @@ export namespace main {
 	        this.backupId = source["backupId"];
 	        this.backupDir = source["backupDir"];
 	        this.results = this.convertValues(source["results"], brewkeg.ApplyResult);
+	        this.restart = this.convertValues(source["restart"], brewkeg.RestartHint);
 	        this.message = source["message"];
 	    }
 	
