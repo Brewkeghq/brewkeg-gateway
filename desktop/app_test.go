@@ -537,3 +537,84 @@ func TestOutOfQuotaKeyIsStillWritten(t *testing.T) {
 		t.Error("config should have been written")
 	}
 }
+
+// Toggling one service must not bounce the whole fleet.
+//
+// The window sends the full desired set on every toggle, so a run for one
+// target rewrites the others too. Before this was gated on the write actually
+// changing bytes, every enabled target reported itself as finished and Claude,
+// Codex and ZCode were all quit and relaunched for a change to one of them.
+func TestReapplyingAnUnchangedTargetRestartsNothing(t *testing.T) {
+	sandbox(t)
+	app := NewApp()
+
+	both := []string{"claude-cli", "codex"}
+	if res := app.Configure("bk_live_fleet_1", both, "https://brewkeg.dev", "", "", ""); !res.OK {
+		t.Fatal(res.Message)
+	}
+
+	// Second run with the same values: nothing should be reported as changed.
+	res := app.Configure("bk_live_fleet_1", both, "https://brewkeg.dev", "", "", "")
+	if !res.OK {
+		t.Fatal(res.Message)
+	}
+	for _, r := range res.Results {
+		if r.Changed {
+			t.Fatalf("%s reported changed on an identical re-run: %+v", r.ID, r)
+		}
+	}
+	if len(res.Restart) != 0 {
+		t.Fatalf("an identical re-run scheduled restarts: %+v", res.Restart)
+	}
+
+	// And the guard must not disable the feature: one real change still
+	// schedules exactly that one target.
+	changed := app.Configure("bk_live_fleet_2", both, "https://brewkeg.dev", "", "", "")
+	if !changed.OK {
+		t.Fatal(changed.Message)
+	}
+	var touched []string
+	for _, r := range changed.Results {
+		if r.Changed {
+			touched = append(touched, r.ID)
+		}
+	}
+	if len(touched) != 2 {
+		t.Fatalf("a new key must change both targets, got %v", touched)
+	}
+	var hints []string
+	for _, h := range changed.Restart {
+		hints = append(hints, h.What)
+	}
+	joined := strings.Join(hints, "|")
+	for _, want := range []string{"Claude Code", "Codex CLI"} {
+		if !strings.Contains(joined, want) {
+			t.Fatalf("%s changed but was not scheduled: %+v", want, changed.Restart)
+		}
+	}
+}
+
+// A removal has to survive the same filter: taking brewkeg out moves bytes,
+// so the tool must still be told to restart.
+func TestRemovingATargetStillReportsChanged(t *testing.T) {
+	sandbox(t)
+	app := NewApp()
+
+	both := []string{"claude-cli", "codex"}
+	if res := app.Configure("bk_live_remove_1", both, "https://brewkeg.dev", "", "", ""); !res.OK {
+		t.Fatal(res.Message)
+	}
+	res := app.Configure("bk_live_remove_1", []string{"claude-cli"}, "https://brewkeg.dev", "", "", "")
+	if !res.OK {
+		t.Fatal(res.Message)
+	}
+	var removed bool
+	for _, r := range res.Results {
+		if r.ID == "codex" && r.Removed && r.Changed {
+			removed = true
+		}
+	}
+	if !removed {
+		t.Fatalf("evicting codex did not report a change: %+v", res.Results)
+	}
+}

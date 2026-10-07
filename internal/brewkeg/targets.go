@@ -423,6 +423,11 @@ type ApplyResult struct {
 	// and then reads "Configured Claude Code" has been told the opposite of the
 	// truth.
 	Removed bool `json:"removed,omitempty"`
+	// Changed means this run's write actually altered a file. A target that was
+	// already configured to exactly these values rewrites identical bytes and is
+	// reported unchanged, so toggling one service cannot restart the fleet:
+	// the desktop app restarts only the Changed ones.
+	Changed bool `json:"changed,omitempty"`
 }
 
 // Apply configures the given target ids inside one backup, and saves it. Either
@@ -471,6 +476,16 @@ func ApplyWithSpec(s Spec, ids []string, opts Options) (*Backup, []ApplyResult, 
 
 	if err := b.Save(); err != nil {
 		return b, results, err
+	}
+
+	// Only now, with every write landed, can we tell which targets really moved.
+	// Asking earlier would call a rewrite of identical bytes a change and put
+	// every configured app back in the restart list on every run.
+	changed := b.ChangedTargets()
+	for i := range results {
+		if results[i].OK {
+			results[i].Changed = changed[results[i].ID]
+		}
 	}
 
 	// Remember the key so the next launch opens with it filled in. Only once a

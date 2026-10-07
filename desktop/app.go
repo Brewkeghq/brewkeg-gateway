@@ -47,7 +47,7 @@ func (a *App) GetState() State {
 	st := State{
 		Version:   brewkeg.Version,
 		BaseURL:   brewkeg.BaseURL(),
-		Dashboard: brewkeg.BaseURL() + "/dashboard",
+		Dashboard: brewkeg.BaseURL() + "/dashboard/keys",
 		Targets:   brewkeg.StatusAll(),
 		Platform:  platform(),
 	}
@@ -140,10 +140,16 @@ func (a *App) Configure(apiKey string, ids []string, baseURL, mainModel, sonnetM
 
 	failed := 0
 	added := 0
+	removed := 0
 	for _, r := range results {
-		if !r.OK {
+		switch {
+		case !r.OK:
 			failed++
-		} else if !r.Removed {
+		case !r.Changed:
+			// Already exactly as we would have written it.
+		case r.Removed:
+			removed++
+		default:
 			added++
 		}
 	}
@@ -153,9 +159,12 @@ func (a *App) Configure(apiKey string, ids []string, baseURL, mainModel, sonnetM
 	}
 	out.OK = true
 
+	// Only the paths that moved, for the same reason as the restart list below:
+	// handing back a docket that lists every service on the machine reads as
+	// "we just rewrote all of these".
 	var paths []string
 	for _, r := range results {
-		if r.OK {
+		if r.OK && r.Changed {
 			paths = append(paths, r.Paths...)
 		}
 	}
@@ -172,7 +181,7 @@ func (a *App) Configure(apiKey string, ids []string, baseURL, mainModel, sonnetM
 	// do. Only apps that were already running are touched.
 	out.Relaunched = brewkeg.Relaunch(brewkeg.RestartAppsFor(touched), 8*time.Second)
 
-	out.Message = summary(added, len(results)-added-failed, failed)
+	out.Message = summary(added, removed, failed)
 	return out
 }
 
@@ -181,10 +190,16 @@ func (a *App) Configure(apiKey string, ids []string, baseURL, mainModel, sonnetM
 // profile is a manual path until the user creates it — and one can succeed with
 // a prerequisite written but the real work still manual. Neither is ours to
 // bounce.
+//
+// Changed is the load-bearing part. The window sends the whole desired set on
+// every toggle, so a run for one service rewrites the others too; without this
+// filter each of those reported itself as finished and every running app was
+// quit and relaunched. Only a target whose bytes actually moved is ours to
+// bounce.
 func finished(results []brewkeg.ApplyResult) []string {
 	var out []string
 	for _, r := range results {
-		if r.OK && len(r.Paths) > 0 && r.Manual == "" {
+		if r.OK && r.Changed && len(r.Paths) > 0 && r.Manual == "" {
 			out = append(out, r.ID)
 		}
 	}
@@ -241,7 +256,7 @@ func (a *App) Restore(id string) (string, error) {
 // OpenDashboard sends the user to where the key comes from, so "I don't have a
 // key yet" has one obvious next step instead of a dead end.
 func (a *App) OpenDashboard() {
-	runtime.BrowserOpenURL(a.ctx, brewkeg.BaseURL()+"/dashboard")
+	runtime.BrowserOpenURL(a.ctx, brewkeg.BaseURL()+"/dashboard/keys")
 }
 
 // RevealBackupDir opens the folder holding the backups, so a user can keep

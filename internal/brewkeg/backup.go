@@ -21,6 +21,44 @@ type Backup struct {
 	Targets   []string          `json:"targets"`
 	Entries   []BackupEntry     `json:"entries"`
 	Notes     map[string]string `json:"notes,omitempty"`
+
+	// before is each entry's file content as it was when we captured it —
+	// before sanitizing our own footprint out of the backup copy. The copy on
+	// disk cannot answer "did this run change anything": run #2 captures run
+	// #1's sanitized state, so it always differs from the live file even when
+	// the write was a no-op. This map holds the honest pre-run bytes so a
+	// target whose file came out identical can be reported as untouched, and
+	// left out of the restart list.
+	//
+	// Transient, like everything else about the live run: it is not part of the
+	// manifest and never outlives the process.
+	before map[string]string `json:"-"`
+}
+
+// ChangedTargets reports which targets actually altered a file this run.
+//
+// Every entry records the target that captured the path, and every write goes
+// through Capture first, so "the bytes differ from what we found" is the only
+// honest test for "we changed something". A target that was already configured
+// correctly rewrites the same content and is reported unchanged — which is the
+// difference between restarting one app and bouncing all of them.
+func (b *Backup) ChangedTargets() map[string]bool {
+	changed := map[string]bool{}
+	for _, e := range b.Entries {
+		before, captured := b.before[e.Path]
+		if !captured {
+			// Created by us, or the pre-state was empty: its very existence is
+			// the change.
+			if !e.Existed {
+				changed[e.Target] = true
+			}
+			continue
+		}
+		if ReadFile(e.Path) != before {
+			changed[e.Target] = true
+		}
+	}
+	return changed
 }
 
 type BackupEntry struct {
@@ -91,6 +129,10 @@ func (b *Backup) Capture(target, path string) error {
 		if err != nil {
 			return err
 		}
+		// The true pre-run bytes, kept for ChangedTargets. Captured before the
+		// sanitize below rewrites the backup copy, and before any write this
+		// run will make to this path.
+		b.remember(path, string(raw))
 		// Back up the pre-brewkeg state, not the previous run's output. Without
 		// this, setup run #2 captures run #1's config, and restoring the latest
 		// backup leaves brewkeg configured with the old key.
@@ -109,6 +151,18 @@ func (b *Backup) Capture(target, path string) error {
 	}
 	b.Entries = append(b.Entries, e)
 	return nil
+}
+
+// remember keeps a path's pre-run content. First write wins, matching Capture:
+// a file touched twice in one run must be compared against the state before
+// the run, not before its own second edit.
+func (b *Backup) remember(path, content string) {
+	if b.before == nil {
+		b.before = map[string]string{}
+	}
+	if _, ok := b.before[path]; !ok {
+		b.before[path] = content
+	}
 }
 
 // replacedLineRe matches the line we comment out when we take over a root key,

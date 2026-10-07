@@ -8,6 +8,7 @@ export namespace brewkeg {
 	    paths?: string[];
 	    manual?: string;
 	    removed?: boolean;
+	    changed?: boolean;
 	
 	    static createFrom(source: any = {}) {
 	        return new ApplyResult(source);
@@ -22,6 +23,7 @@ export namespace brewkeg {
 	        this.paths = source["paths"];
 	        this.manual = source["manual"];
 	        this.removed = source["removed"];
+	        this.changed = source["changed"];
 	    }
 	}
 	export class BackupEntry {

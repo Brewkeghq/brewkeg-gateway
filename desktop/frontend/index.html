@@ -24,7 +24,7 @@
           <button class="btn-quiet" id="peek" type="button">Show</button>
         </div>
         <p class="field-note" id="key-note"><span id="key-label">No key yet?</span>
-          <button class="linkish" id="get-key" type="button">brewkeg.dev/dashboard</button>
+          <button class="linkish" id="get-key" type="button">brewkeg.dev/dashboard/keys</button>
         </p>
       </section>
 
@@ -56,6 +56,9 @@
           <span class="stamp">backed up</span>
         </div>
         <ul class="docket-lines" id="docket-lines"></ul>
+        <!-- One line, only when a service still needs the user. Per-row manual
+             steps buried the outcome this panel exists to show. -->
+        <p class="docket-note" id="docket-note" hidden></p>
         <div class="restart" id="restart" hidden>
           <p class="restart-title" id="restart-title">Restart to apply</p>
           <ul id="restart-list"></ul>

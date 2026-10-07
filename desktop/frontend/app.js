@@ -20,8 +20,13 @@ const api = real ?? {
 };
 
 const ICONS = {
-  "claude-cli": "icons/anthropic.svg",
-  desktop: "icons/anthropic.svg",
+  // Claude's own mark, lifted from web2/public/claude-mark-512.png — the same
+  // asset brewkeg.dev and the favicon use, so the row is the logo the user
+  // already knows rather than a generic "anthropic.svg" wordless glyph.
+  "claude-cli": "icons/claude.png",
+  // Claude Desktop's real app tile, extracted from electron.icns inside
+  // /Applications/Claude.app. Desktop ships its own icon, so it gets its own.
+  desktop: "icons/claude-app.png",
   codex: "icons/openai.svg",
   zcode: "icons/zcode.png",
 };
@@ -42,16 +47,16 @@ const DEMO_STATE = {
 const DEMO_RESULT = {
   ok: true,
   backupId: "20261007-163657",
-  message: "Connected 2 tools.",
+  message: "Connected 1 service.",
   restart: [
     { what: "Claude Code", action: "quit and reopen" },
-    { what: "Claude Desktop", action: "quit and reopen" },
     { what: "Your terminal", action: "open a new window" },
   ],
   relaunched: [{ app: "Codex desktop", action: "restarted", detail: "bundle com.openai.codex" }],
   results: [
-    { id: "claude-cli", label: "Claude Code", ok: true, paths: ["~/.claude/settings.json", "~/.zshrc"], manual: "" },
-    { id: "desktop", label: "Claude Desktop", ok: true, paths: [], manual: "Developer → Configure Third-Party Inference…\nBase URL: https://brewkeg.dev" },
+    { id: "claude-cli", label: "Claude Code", ok: true, changed: true, paths: ["~/.claude/settings.json"], manual: "" },
+    { id: "desktop", label: "Claude Desktop", ok: true, changed: false, paths: [], manual: "Written to your Claude Desktop configuration. Developer Mode is off, so you will not see the third-party menu." },
+    { id: "codex", label: "Codex", ok: true, changed: false, paths: ["~/.codex/config.toml"], manual: "" },
   ],
 };
 
@@ -77,7 +82,7 @@ async function boot() {
   el("update").addEventListener("click", () => api.OpenUpdate(el("update").dataset.url));
   el("repo").addEventListener("click", () => api.OpenRepo());
   el("copy-restart").addEventListener("click", copyRestart);
-  el("get-key").title = `Get your API key at ${state.baseUrl}/dashboard`;
+  el("get-key").title = `Get your API key at ${state.baseUrl}/dashboard/keys`;
   refreshSpec();
   if (state.apiKey) {
     // Reopening should never cost you the key you already gave us.
@@ -357,19 +362,50 @@ function showDocket(r) {
     mark.className = "mark";
     mark.textContent = res.ok ? "✓" : "✕";
 
+    // The service name, never the file paths and never the manual steps. A
+    // 460px window showing "/Users/navic…/.claude/settings.json" twice per
+    // service tells the user nothing they can act on — the outcome is the only
+    // thing they came here to read, and the backup still holds every path.
     const body = document.createElement("span");
-    body.className = res.manual ? "manual" : "path";
-    body.textContent = res.ok ? (res.manual || (res.paths || []).join("\n")) : res.error;
+    body.className = "path";
+    body.textContent = res.ok ? res.label : res.error;
 
     const where = document.createElement("span");
     where.className = "where";
-    // "written" would be a lie for a disconnect. The docket is the only place
-    // the user sees what actually happened to each file, so it has to say
-    // which direction each one went.
-    where.textContent = res.ok ? (res.manual ? "in-app" : res.removed ? "cleared" : "written") : "";
+    // "written" would be a lie for a disconnect, and "in-app" says nothing the
+    // label does not. For the services this run rewrote byte-identically, say
+    // "unchanged" — the user did not touch them and must not read the list as
+    // "all of these were just changed".
+    where.textContent = res.ok
+      ? res.removed
+        ? "cleared"
+        : res.changed
+          ? "written"
+          : "unchanged"
+      : "";
 
     li.append(mark, body, where);
     lines.appendChild(li);
+  }
+
+  // A service that still needs the user gets one line, not a paragraph per
+  // row. Take the first sentence that is not a "we wrote it" statement —
+  // "Written to your Claude Desktop configuration." restates the row above
+  // it; the sentence after it ("Developer Mode is off…") is the fact the user
+  // cannot act without. The rest lives in `brewkeg status`.
+  const note = el("docket-note");
+  const manual = (r.results || []).filter((x) => x.ok && x.manual);
+  if (manual.length) {
+    const first = String(manual[0].manual)
+      .split(/(?<=[.!?])\s/)
+      .find((s) => !/^(written|wrote|added|set|saved)\b/i.test(s));
+    note.textContent =
+      manual.length === 1
+        ? `${manual[0].label}: ${first || "one step in the app"}`
+        : `${manual.map((x) => x.label).join(", ")} need one step in the app.`;
+    note.hidden = false;
+  } else {
+    note.hidden = true;
   }
   // Anything we could not cycle stays in the list as a hint, because it still
   // has to happen by hand. Anything we did cycle is shown as done, not advice.

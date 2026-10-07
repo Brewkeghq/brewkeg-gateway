@@ -78,7 +78,7 @@ func runSetup(args []string) int {
 	// changes would strand anyone whose key has just expired.
 	disconnectOnly := len(picked) == 0
 	if opts.APIKey == "" && !disconnectOnly {
-		opts.APIKey = promptSecret("Enter your brewkeg API key (from brewkeg.dev/dashboard)")
+		opts.APIKey = promptSecret("Enter your brewkeg API key (from brewkeg.dev/dashboard/keys)")
 	}
 	if opts.APIKey == "" && !disconnectOnly {
 		fmt.Println("No API key given. Nothing changed.")

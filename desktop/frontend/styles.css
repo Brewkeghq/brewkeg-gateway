@@ -377,6 +377,15 @@ body.busy .switch { transition: none; }
   color: var(--muted-foreground);
   white-space: pre-wrap;
 }
+.docket-note {
+  margin: 0 0 10px;
+  padding: 7px 9px;
+  border-radius: 0.5rem;
+  background: var(--muted);
+  color: var(--muted-foreground);
+  font-size: 12px;
+  line-height: 1.45;
+}
 .docket-lines .fail .mark,
 .docket-lines .fail .path { color: var(--destructive); }
 .docket-lines .where {

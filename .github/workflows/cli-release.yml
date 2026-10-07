@@ -1,17 +1,24 @@
 name: cli-release
 
+# Tests are a gate, not a step inside the release job. A failing test in the
+# same job as GoReleaser means the release either never happens or half
+# happens, and on a branch push there is no signal at all until someone cuts a
+# tag. `test` therefore runs on every push and every pull request, and both
+# publishing jobs declare `needs: test` — so nothing can ship without it.
 on:
   push:
+    branches: ['main']
     tags:
       - 'cli-v*'
+  pull_request:
   workflow_dispatch:
 
 permissions:
   contents: write
 
 jobs:
-  # The CLI binaries. GoReleaser publishes these.
-  cli:
+  test:
+    name: vet + test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -20,19 +27,60 @@ jobs:
 
       - uses: actions/setup-go@v5
         with:
-          go-version: '1.22'
+          # go.mod declares `go 1.25.0`. An older toolchain refuses the module
+          # outright, so this must track go.mod rather than sit at 1.22.
+          go-version: '1.25'
           cache-dependency-path: cli/go.sum
+
+      - name: Vet
+        working-directory: cli
+        run: go vet ./...
 
       - name: Test
         working-directory: cli
-        run: go vet ./... && go test ./...
+        run: go test ./... -count=1 -race
 
-      - name: Release
+  # The CLI binaries. GoReleaser publishes these.
+  #
+  # The repo root IS the Go module root (`cli/go.mod` on GitHub == this
+  # module), so `path: cli` in the checkout is what lines the workspace up
+  # with the layout the local developer sees. Every `run` step then carries
+  # `working-directory: cli` — the GoReleaser action itself is `uses:` and
+  # therefore CANNOT take a working-directory (actionlint catches that, and
+  # GitHub rejects the entire workflow file for it).
+  cli:
+    needs: test
+    # This workflow now also runs on plain branch pushes, which is what makes
+    # the gate useful. GoReleaser must not: without this it would cut a release
+    # on every commit to main.
+    if: startsWith(github.ref, 'refs/tags/cli-v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: cli
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+          cache-dependency-path: cli/go.sum
+
+      # Belt and braces. `needs: test` already gated this, but GoReleaser runs
+      # `go mod tidy` as a before-hook and then builds, so a re-vet here means a
+      # build failure is never mistaken for a green release.
+      - name: Vet
         working-directory: cli
+        run: go vet ./...
+
+      - name: Install GoReleaser
         uses: goreleaser/goreleaser-action@v6
         with:
           version: latest
-          args: release --clean
+          install-only: true
+
+      - name: Release
+        working-directory: cli
+        run: goreleaser release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -41,6 +89,7 @@ jobs:
   # already created.
   desktop:
     needs: cli
+    if: startsWith(github.ref, 'refs/tags/cli-v')
     strategy:
       fail-fast: false
       matrix:
@@ -56,28 +105,35 @@ jobs:
             package: desktop/build/bin/gateway
     runs-on: ${{ matrix.os }}
     steps:
+      # Same `path: cli` reasoning as the job above: the module root is the
+      # repo root, so `go vet ./...` and `../assets/appicon.png` only resolve
+      # if the checkout lands in a `cli` subdirectory of the workspace.
       - uses: actions/checkout@v4
+        with:
+          path: cli
 
       - uses: actions/setup-go@v5
         with:
-          go-version: '1.22'
-          cache-dependency-path: go.sum
+          go-version: '1.25'
+          cache-dependency-path: cli/go.sum
 
       - uses: actions/setup-node@v4
-        if: runner.os == 'windows'
+        if: runner.os == 'Windows'
         with:
           node-version: '20'
 
       - name: Install Wails
+        working-directory: cli
         run: |
           go install github.com/wailsapp/wails/v2/cmd/wails@latest
           echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
 
       - name: Test
-        run: go vet ./... && go test ./...
+        working-directory: cli
+        run: go vet ./... && go test ./... -count=1
 
       - name: Build app
-        working-directory: desktop
+        working-directory: cli/desktop
         run: |
           mkdir -p build
           cp ../assets/appicon.png build/appicon.png
@@ -85,33 +141,36 @@ jobs:
 
       - name: Package (macOS)
         if: runner.os == 'macOS'
-        run: |
-          cd desktop/build/bin
-          ditto -c -k --keepParent gateway.app "gateway_${GITHUB_REF_NAME}_macos.zip"
+        working-directory: cli/desktop/build/bin
+        run: ditto -c -k --keepParent gateway.app "gateway_${GITHUB_REF_NAME}_macos.zip"
 
       - name: Package (Windows)
         if: runner.os == 'Windows'
-        run: |
-          cd desktop/build/bin
-          7z a "gateway_${env:GITHUB_REF_NAME}_windows.zip" gateway.exe
+        working-directory: cli/desktop/build/bin
+        run: 7z a "gateway_${GITHUB_REF_NAME}_windows.zip" gateway.exe
 
       - name: Package (Linux)
         if: runner.os == 'Linux'
-        run: |
-          cd desktop/build/bin
-          tar czf "gateway_${GITHUB_REF_NAME}_linux.tar.gz" gateway
+        working-directory: cli/desktop/build/bin
+        run: tar czf "gateway_${GITHUB_REF_NAME}_linux.tar.gz" gateway
 
       - name: Attach to release
         shell: bash
+        working-directory: cli/desktop/build/bin
         run: |
-          cd desktop/build/bin
-          ls -la
+          # The name built above, matched exactly. The previous version derived
+          # the Windows name differently from the one it packaged (`tr -d 'v'`),
+          # so it only ever attached by falling back to "newest file in dir".
           case "${{ runner.os }}" in
             macOS) asset="gateway_${GITHUB_REF_NAME}_macos.zip" ;;
-            Windows) asset="gateway_$(echo $GITHUB_REF_NAME | tr -d 'v')_windows.zip" ;;
+            Windows) asset="gateway_${GITHUB_REF_NAME}_windows.zip" ;;
             *) asset="gateway_${GITHUB_REF_NAME}_linux.tar.gz" ;;
           esac
-          [ -f "$asset" ] || asset=$(ls -t *.zip *.tar.gz 2>/dev/null | head -1)
+          if [ ! -f "$asset" ]; then
+            echo "expected asset missing: $asset" >&2
+            ls -la >&2
+            exit 1
+          fi
           gh release upload "$GITHUB_REF_NAME" "$asset" --clobber
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
