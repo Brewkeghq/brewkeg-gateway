@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/brewkeg/brewkeg-cli/internal/brewkeg"
+	"github.com/brewkeghq/brewkeg-cli/internal/brewkeg"
 )
 
 // sandbox points HOME at a temp dir so these run exactly the code the window

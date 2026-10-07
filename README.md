@@ -1,6 +1,6 @@
 # brewkeg
 
-Two binaries, one engine, one repo — `github.com/brewkeg/brewkeg-cli`.
+Two binaries, one engine, one repo — `github.com/brewkeghq/brewkeg-cli`.
 
 | Binary | Install | Use when |
 |---|---|---|

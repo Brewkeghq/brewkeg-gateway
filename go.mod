@@ -1,4 +1,4 @@
-module github.com/brewkeg/brewkeg-cli
+module github.com/brewkeghq/brewkeg-cli
 
 go 1.25.0
 

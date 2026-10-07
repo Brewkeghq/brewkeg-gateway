@@ -9,7 +9,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/brewkeg/brewkeg-cli/internal/brewkeg"
+	"github.com/brewkeghq/brewkeg-cli/internal/brewkeg"
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/options"
 	"github.com/wailsapp/wails/v2/pkg/options/assetserver"

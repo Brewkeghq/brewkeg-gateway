@@ -6,7 +6,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/brewkeg/brewkeg-cli/internal/brewkeg"
+	"github.com/brewkeghq/brewkeg-cli/internal/brewkeg"
 )
 
 func runRestore(args []string) int {

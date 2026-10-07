@@ -3,7 +3,7 @@
 #   curl -fsSL https://brewkeg.dev/install.sh | sh
 set -eu
 
-REPO="${BREWKEG_REPO:-brewkeg/brewkeg-cli}"
+REPO="${BREWKEG_REPO:-brewkeghq/brewkeg-cli}"
 INSTALL_DIR="${BREWKEG_INSTALL_DIR:-$HOME/.local/bin}"
 
 say() { printf '%s\n' "$*"; }

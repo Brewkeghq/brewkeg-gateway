@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/brewkeg/brewkeg-cli/internal/brewkeg"
+	"github.com/brewkeghq/brewkeg-cli/internal/brewkeg"
 )
 
 // headlessSandbox is sandbox() plus a config file naming targets, which is the

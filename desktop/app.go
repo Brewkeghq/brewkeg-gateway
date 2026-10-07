@@ -9,7 +9,7 @@ import (
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 
-	"github.com/brewkeg/brewkeg-cli/internal/brewkeg"
+	"github.com/brewkeghq/brewkeg-cli/internal/brewkeg"
 )
 
 // App is the binding surface the frontend calls. Every method returns plain
