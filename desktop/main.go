@@ -10,7 +10,6 @@ import (
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/options"
 	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
-	"github.com/wailsapp/wails/v2/pkg/options/mac"
 )
 
 //go:embed all:frontend
@@ -19,9 +18,9 @@ var assets embed.FS
 func main() {
 	app := NewApp()
 	err := wails.Run(&options.App{
-		Title:  "brewkeg",
-		Width:  600,
-		Height: 580,
+		Title:     "brewkeg",
+		Width:     600,
+		Height:    580,
 		MinWidth:  520,
 		MinHeight: 460,
 		AssetServer: &assetserver.Options{
@@ -29,7 +28,6 @@ func main() {
 		},
 		OnStartup: app.startup,
 		Bind:      []interface{}{app},
-		Mac:       &mac.Options{TitleBar: mac.TitleBarHiddenInset()},
 	})
 	if err != nil {
 		fmt.Println(err)

@@ -7,11 +7,6 @@
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
-    <header>
-      <span class="wordmark">brewkeg</span>
-      <span class="meta" id="chrome-meta"></span>
-    </header>
-
     <button class="update" id="update" hidden type="button">
       <span class="update-dot" aria-hidden="true"></span>
       <span id="update-text"></span>
@@ -25,8 +20,8 @@
           <input id="apikey" type="password" spellcheck="false" autocomplete="off" placeholder="API key" />
           <button class="btn-quiet" id="peek" type="button">Show</button>
         </div>
-        <p class="field-note" id="key-note">
-          <button class="linkish" id="get-key" type="button">Get a key</button>
+        <p class="field-note" id="key-note"><span id="key-label">No key yet?</span>
+          <button class="linkish" id="get-key" type="button">brewkeg.dev/dashboard</button>
         </p>
       </section>
 
@@ -36,7 +31,10 @@
 
       <div class="actions">
         <button class="primary" id="apply" type="button">Connect</button>
-        <p class="promise" id="promise">Backed up first.</p>
+        <p class="promise">
+          <span id="promise">Backed up first.</span>
+          <span class="version" id="version"></span>
+        </p>
       </div>
 
       <section class="docket" id="docket" hidden>

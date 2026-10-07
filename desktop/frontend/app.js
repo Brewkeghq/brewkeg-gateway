@@ -49,7 +49,7 @@ boot().catch((e) => say(`Could not start: ${e}`, true));
 
 async function boot() {
   state = await api.GetState();
-  el("chrome-meta").textContent = state.version;
+  el("version").textContent = state.version;
   render();
   checkUpdate();
   el("get-key").addEventListener("click", () => api.OpenDashboard());
@@ -57,7 +57,11 @@ async function boot() {
   el("undo").addEventListener("click", undo);
   el("apply").addEventListener("click", apply);
   el("update").addEventListener("click", () => api.OpenUpdate(el("update").dataset.url));
-  if (state.maskedKey) el("key-note").innerHTML = `Using <code>${state.maskedKey}</code>`;
+  el("get-key").title = `Get your API key at ${state.baseUrl}/dashboard`;
+  if (state.maskedKey) {
+    el("key-label").textContent = "Using";
+    el("key-note").insertAdjacentHTML("beforeend", ` <code>${state.maskedKey}</code>`);
+  }
 }
 
 async function checkUpdate() {

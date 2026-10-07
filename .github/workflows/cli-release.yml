@@ -78,7 +78,10 @@ jobs:
 
       - name: Build app
         working-directory: desktop
-        run: wails build -clean -platform ${{ matrix.platform }}
+        run: |
+          mkdir -p build
+          cp ../assets/appicon.png build/appicon.png
+          wails build -clean -platform ${{ matrix.platform }}
 
       - name: Package (macOS)
         if: runner.os == 'macOS'
