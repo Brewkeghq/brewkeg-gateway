@@ -101,3 +101,65 @@ func SetRootKey(content, key, value string) string {
 	}
 	return out
 }
+
+// SetTableKeys edits one [table] in place: it replaces the values of the keys we
+// own and adds only the ones that are missing, leaving every other line exactly
+// as the user wrote it. Appending a second table of the same name would be a
+// duplicate-key parse error, so this is the only safe way to touch a table the
+// user may already have.
+func SetTableKeys(content, table string, kv []string) (string, bool) {
+	lines := strings.Split(content, "\n")
+
+	start := -1
+	for i, l := range lines {
+		if strings.TrimSpace(l) == "["+table+"]" {
+			start = i
+			break
+		}
+	}
+	if start < 0 {
+		return content, false
+	}
+
+	end := len(lines)
+	for i := start + 1; i < len(lines); i++ {
+		if strings.HasPrefix(strings.TrimSpace(lines[i]), "[") {
+			end = i
+			break
+		}
+	}
+
+	for _, pair := range kv {
+		key := strings.TrimSpace(strings.SplitN(pair, "=", 2)[0])
+		re := regexp.MustCompile(`^\s*` + regexp.QuoteMeta(key) + `\s*=`)
+		found := false
+		for i := start + 1; i < end; i++ {
+			t := strings.TrimSpace(lines[i])
+			if t == "" || strings.HasPrefix(t, "#") {
+				continue
+			}
+			if re.MatchString(lines[i]) {
+				lines[i] = pair
+				found = true
+				break
+			}
+		}
+		if !found {
+			// append at the end of this table, before any trailing comments
+			ins := end
+			for ins > start+1 && strings.TrimSpace(lines[ins-1]) == "" {
+				ins--
+			}
+			merged := append([]string{}, lines[:ins]...)
+			merged = append(merged, pair)
+			lines = append(merged, lines[ins:]...)
+			end++
+		}
+	}
+	return strings.Join(lines, "\n"), true
+}
+
+// TableHas reports whether a [table] exists.
+func TableHas(content, table string) bool {
+	return strings.Contains(content, "\n["+table+"]") || strings.HasPrefix(content, "["+table+"]")
+}

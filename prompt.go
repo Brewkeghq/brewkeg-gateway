@@ -12,6 +12,14 @@ import (
 
 var stdin = bufio.NewReader(os.Stdin)
 
+func isTTY() bool {
+	fi, err := os.Stdin.Stat()
+	if err != nil {
+		return false
+	}
+	return fi.Mode()&os.ModeCharDevice != 0
+}
+
 func promptLine(label, def string) string {
 	if def != "" {
 		fmt.Printf("%s [%s]: ", label, def)

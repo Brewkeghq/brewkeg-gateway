@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -74,7 +75,7 @@ func (b *Backup) Capture(target, path string) error {
 		}
 	}
 
-	dir := filepath.Join(backupsRoot(), b.ID)
+	dir := filepath.Join(BackupsRoot(), b.ID)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
@@ -105,14 +106,21 @@ func (b *Backup) Capture(target, path string) error {
 	return nil
 }
 
+// replacedLineRe matches the line we comment out when we take over a root key,
+// e.g. `# brewkeg replaced: model_provider = "openai"`. It is brewkeg's own
+// footprint too, so it must not end up in the "pre-brewkeg" backup copy.
+var replacedLineRe = regexp.MustCompile(`(?m)^# brewkeg replaced: .*\n?`)
+
 // sanitizeBackup strips brewkeg's own footprint from a copy being backed up.
 func sanitizeBackup(path string, raw []byte) []byte {
 	s := string(raw)
-	if hasBlock(s) {
-		if stripped, ok := stripBlock(s); ok {
+	if HasBlock(s) {
+		if stripped, ok := StripBlock(s); ok {
 			s = stripped
 		}
 	}
+	s = replacedLineRe.ReplaceAllString(s, "")
+	s = strings.TrimRight(s, "\n") + "\n"
 	if strings.HasSuffix(path, ".json") {
 		var doc map[string]any
 		if err := json.Unmarshal([]byte(s), &doc); err == nil {
@@ -141,7 +149,7 @@ func sanitize(p string) string {
 }
 
 func (b *Backup) Save() error {
-	dir := filepath.Join(backupsRoot(), b.ID)
+	dir := filepath.Join(BackupsRoot(), b.ID)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
@@ -152,7 +160,7 @@ func (b *Backup) Save() error {
 	return os.WriteFile(filepath.Join(dir, "manifest.json"), raw, 0o600)
 }
 
-func BackupDir(id string) string { return filepath.Join(backupsRoot(), id) }
+func BackupDir(id string) string { return filepath.Join(BackupsRoot(), id) }
 
 func LoadBackup(id string) (*Backup, error) {
 	raw, err := os.ReadFile(filepath.Join(BackupDir(id), "manifest.json"))
@@ -167,7 +175,7 @@ func LoadBackup(id string) (*Backup, error) {
 }
 
 func ListBackups() ([]Backup, error) {
-	ents, err := os.ReadDir(backupsRoot())
+	ents, err := os.ReadDir(BackupsRoot())
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil, nil
@@ -193,7 +201,7 @@ func LatestBackup() (*Backup, error) {
 		return nil, err
 	}
 	if len(all) == 0 {
-		return nil, fmt.Errorf("no backups found in %s — nothing to restore", backupsRoot())
+		return nil, fmt.Errorf("no backups found in %s — nothing to restore", BackupsRoot())
 	}
 	return &all[0], nil
 }
@@ -227,7 +235,7 @@ func (b *Backup) Restore(dryRun bool) ([]RestoreResult, error) {
 				out = append(out, RestoreResult{e.Path, "would remove brewkeg block" + removeSuffix(e.Path)})
 				continue
 			}
-			if stripped, ok := stripBlock(cur); ok && strings.TrimSpace(stripped) == "" {
+			if stripped, ok := StripBlock(cur); ok && strings.TrimSpace(stripped) == "" {
 				os.Remove(e.Path)
 				out = append(out, RestoreResult{e.Path, "removed (brewkeg created it)"})
 			} else {

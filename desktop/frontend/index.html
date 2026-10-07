@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>brewkeg</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header>
+      <span class="wordmark">brewkeg</span>
+      <span class="meta" id="chrome-meta"></span>
+    </header>
+
+    <button class="update" id="update" hidden type="button">
+      <span class="update-dot" aria-hidden="true"></span>
+      <span id="update-text"></span>
+    </button>
+
+    <main>
+      <h1>Connect your tools.</h1>
+
+      <section class="card tight">
+        <div class="field">
+          <input id="apikey" type="password" spellcheck="false" autocomplete="off" placeholder="API key" />
+          <button class="btn-quiet" id="peek" type="button">Show</button>
+        </div>
+        <p class="field-note" id="key-note">
+          <button class="linkish" id="get-key" type="button">Get a key</button>
+        </p>
+      </section>
+
+      <section class="card tight">
+        <ul class="services" id="services"></ul>
+      </section>
+
+      <div class="actions">
+        <button class="primary" id="apply" type="button">Connect</button>
+        <p class="promise" id="promise">Backed up first.</p>
+      </div>
+
+      <section class="docket" id="docket" hidden>
+        <div class="docket-head">
+          <span id="backup-id"></span>
+          <span class="stamp">backed up</span>
+        </div>
+        <ul class="docket-lines" id="docket-lines"></ul>
+        <div class="docket-actions">
+          <button class="btn-quiet" id="undo" type="button">Undo</button>
+        </div>
+      </section>
+
+      <p class="note" id="note" hidden></p>
+    </main>
+
+    <script src="app.js"></script>
+  </body>
+</html>

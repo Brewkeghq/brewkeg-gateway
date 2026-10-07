@@ -1,28 +1,63 @@
-# brewkeg CLI
+# brewkeg
 
-One command to point Claude Code, Codex CLI and Claude Desktop at brewkeg.
+Two binaries, one engine, one repo — `github.com/brewkeg/brewkeg-cli`.
 
-```bash
-curl -fsSL https://brewkeg.dev/install.sh | sh
-brewkeg setup
+| Binary | Install | Use when |
+|---|---|---|
+| `brewkeg` (CLI) | `curl -fsSL https://brewkeg.dev/install.sh \| sh` | scripting, CI, or you live in a terminal |
+| `brewkeg` (desktop app) | download the `.dmg` / `.zip` / `.tar.gz` from a release | one click: paste your key, flip the switches |
+
+Both are the same `internal/brewkeg` engine, so they can never disagree about
+what they write to your config files.
+
+## The desktop app
+
+Open it, paste your brewkeg API key, choose which tools to turn on, press the
+button. It writes the config, prints a docket of every file it touched, and
+keeps an undo. No terminal, no editing TOML.
+
+```
+Point your tools at brewkeg.          ← Instrument Serif italic, brand headline
+┌ SERVICES ─────────────────── 2 selected ┐
+│ 🅰 Claude Code        ~/.claude/settings.json   [on] │
+│ Codex CLI                 ~/.codex/config.toml      [on] │
+└──────────────────────────────────────────────────────────┘
+┌ BACKUP 20261007-163657-565            [ BACKED UP ] ┐
+│ ✓ ~/.claude/settings.json                    written │
+│ ✓ Claude Desktop → Developer menu…           in app  │
+└────────────────────────────────────────────────────────┘
 ```
 
-Single static binary. No Node, no Python, no npm, no runtime dependencies.
-Go stdlib only — see `go.mod`.
+The window is 600×580. It checks GitHub releases on open and shows a lime
+banner when a newer version exists, then takes you to the release. It is a
+notifier, not a silent self-install — the app never replaces its own executable
+behind your back.
 
-## Commands
+Build it:
 
-| Command | What it does |
-|---|---|
-| `brewkeg setup` | Interactive. Pick services, paste key, done. |
-| `brewkeg setup --api-key bk_live_…` | Non-interactive. |
-| `brewkeg status` | What is configured, where. |
-| `brewkeg backups` | List every backup on this machine. |
-| `brewkeg restore` | Undo the most recent setup. |
-| `brewkeg restore --backup <id>` | Undo a specific one. |
-| `brewkeg restore --dry-run` | Show what would change, touch nothing. |
+```bash
+go install github.com/wailsapp/wails/v2/cmd/wails@latest
+cd desktop && wails build -clean          # → desktop/build/bin/brewkeg.app
+cd .. && wails dev -d desktop/frontend    # live reload during design work
+```
 
-Flags: `--base-url`, `--model`, `--fast-model`, `--backup`, `--dry-run`.
+Design review without launching the app: open
+`desktop/frontend/index.html?demo=1` in a browser. Same HTML/CSS/JS, fake data.
+
+The UI uses the product's own tokens (white, `#0f1115` ink, `#bef264` accent,
+Geist + Geist Mono, Instrument Serif italic headline), with the woff2/ttf files
+vendored into `desktop/frontend/fonts/` so it renders identically offline.
+
+## The CLI
+
+```bash
+brewkeg setup                 # interactive: pick services, paste key
+brewkeg setup --api-key bk_live_…
+brewkeg status                # what is configured, where
+brewkeg backups               # list every backup on this machine
+brewkeg restore               # undo the most recent setup
+brewkeg restore --dry-run     # show what would change, touch nothing
+```
 
 ## What it writes
 
@@ -30,11 +65,10 @@ Flags: `--base-url`, `--model`, `--fast-model`, `--backup`, `--dry-run`.
 |---|---|
 | Claude Code CLI | `~/.claude/settings.json` (`env` block, merged — other keys preserved) + exports in your shell rc, inside a marked block |
 | Codex CLI | `~/.codex/config.toml` — `[model_providers.brewkeg]` table plus the root `model_provider` key, both marked |
-| Claude Desktop | Nothing. Its gateway lives in the Developer menu, so the CLI prints the exact steps instead of guessing at a file it does not own. |
+| Claude Desktop | Nothing. Its gateway lives in the Developer menu, so both front-ends print the exact steps instead of guessing at a file it does not own. |
 
-Anything already there is preserved. A pre-existing
-`model_provider = "openai"` is commented out rather than deleted, so the change
-is visible and reversible.
+A pre-existing `model_provider = "openai"` is commented out rather than deleted,
+so the change is visible and reversible.
 
 ## Restore is the contract
 
@@ -50,14 +84,15 @@ On restore:
 - a file brewkeg created is deleted if nothing else is in it, otherwise only
   brewkeg's marked block is removed
 
-## Build
+## Build and test
 
 ```bash
-go build -o brewkeg .       # local build
-goreleaser check            # validate release config
-goreleaser release --snapshot --clean
+go vet ./... && go test ./...     # engine + CLI + desktop bindings
+go build -o brewkeg .             # CLI
+cd desktop && wails build -clean  # desktop app
+goreleaser check                  # validate the CLI release config
 ```
 
-Releases publish `brewkeg_<version>_<os>_<arch>` binaries for
-darwin/linux/windows × amd64/arm64, plus a checksum file the installer verifies.
-See `.goreleaser.yaml`.
+CI on tag `cli-v*` (`.github/workflows/cli-release.yml`): GoReleaser publishes the
+CLI binaries, then a per-OS matrix builds the desktop app with Wails and attaches
+the packaged app to the same release.

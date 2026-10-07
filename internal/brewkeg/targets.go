@@ -296,15 +296,21 @@ func (t codexTarget) Apply(b *Backup, o Options) (string, error) {
 		return "", err
 	}
 
-	body := strings.Join([]string{
-		"[model_providers.brewkeg]",
+	kv := []string{
 		`name = "brewkeg"`,
 		`base_url = "` + o.BaseURL + `/v1"`,
 		`wire_api = "responses"`,
 		`experimental_bearer_token = "` + o.APIKey + `"`,
-	}, "\n")
+	}
 
-	next := ApplyBlock(ReadFile(p), BlockBegin, BlockEnd, body)
+	// If the user already has a brewkeg provider table, edit it in place —
+	// appending a second [model_providers.brewkeg] would be a parse error.
+	// Otherwise drop a marked block at the end so restore can strip it.
+	current := ReadFile(p)
+	next, edited := SetTableKeys(current, "model_providers.brewkeg", kv)
+	if !edited {
+		next = ApplyBlock(current, BlockBegin, BlockEnd, "[model_providers.brewkeg]\n"+strings.Join(kv, "\n"))
+	}
 	next = SetRootKey(next, "model_provider", `"brewkeg"`)
 	if err := WriteFile(p, next); err != nil {
 		return "", err

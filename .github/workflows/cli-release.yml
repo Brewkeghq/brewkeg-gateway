@@ -10,7 +10,8 @@ permissions:
   contents: write
 
 jobs:
-  release:
+  # The CLI binaries. GoReleaser publishes these.
+  cli:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -24,7 +25,7 @@ jobs:
 
       - name: Test
         working-directory: cli
-        run: go vet ./... && go build -o /dev/null .
+        run: go vet ./... && go test ./...
 
       - name: Release
         working-directory: cli
@@ -32,5 +33,82 @@ jobs:
         with:
           version: latest
           args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # The desktop app. Wails builds each OS natively, so this has to run on a
+  # runner per platform; the artefacts are attached to the release the CLI job
+  # already created.
+  desktop:
+    needs: cli
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            platform: darwin/universal
+            package: desktop/build/bin/brewkeg.app
+          - os: windows-latest
+            platform: windows/amd64
+            package: desktop/build/bin/brewkeg.exe
+          - os: ubuntu-latest
+            platform: linux/amd64
+            package: desktop/build/bin/brewkeg
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+          cache-dependency-path: go.sum
+
+      - uses: actions/setup-node@v4
+        if: runner.os == 'windows'
+        with:
+          node-version: '20'
+
+      - name: Install Wails
+        run: |
+          go install github.com/wailsapp/wails/v2/cmd/wails@latest
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+
+      - name: Test
+        run: go vet ./... && go test ./...
+
+      - name: Build app
+        working-directory: desktop
+        run: wails build -clean -platform ${{ matrix.platform }}
+
+      - name: Package (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          cd desktop/build/bin
+          ditto -c -k --keepParent brewkeg.app "brewkeg_${GITHUB_REF_NAME}_macos.zip"
+
+      - name: Package (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          cd desktop/build/bin
+          7z a "brewkeg_${env:GITHUB_REF_NAME}_windows.zip" brewkeg.exe
+
+      - name: Package (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          cd desktop/build/bin
+          tar czf "brewkeg_${GITHUB_REF_NAME}_linux.tar.gz" brewkeg
+
+      - name: Attach to release
+        shell: bash
+        run: |
+          cd desktop/build/bin
+          ls -la
+          case "${{ runner.os }}" in
+            macOS) asset="brewkeg_${GITHUB_REF_NAME}_macos.zip" ;;
+            Windows) asset="brewkeg_$(echo $GITHUB_REF_NAME | tr -d 'v')_windows.zip" ;;
+            *) asset="brewkeg_${GITHUB_REF_NAME}_linux.tar.gz" ;;
+          esac
+          [ -f "$asset" ] || asset=$(ls -t *.zip *.tar.gz 2>/dev/null | head -1)
+          gh release upload "$GITHUB_REF_NAME" "$asset" --clobber
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

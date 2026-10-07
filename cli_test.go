@@ -1,19 +1,24 @@
 package main
 
+// The engine moved to internal/brewkeg; these tests exercise it through that
+// package so the CLI and the desktop app are both covered by the same suite.
+
 import (
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/brewkeg/brewkeg-cli/internal/brewkeg"
 )
 
 func TestBlockIdempotent(t *testing.T) {
 	body := `export ANTHROPIC_BASE_URL="https://brewkeg.dev"`
 	orig := "export FOO=1\n"
-	once := applyBlock(orig, blockBegin, blockEnd, body)
-	twice := applyBlock(once, blockBegin, blockEnd, body)
+	once := brewkeg.ApplyBlock(orig, brewkeg.BlockBegin, brewkeg.BlockEnd, body)
+	twice := brewkeg.ApplyBlock(once, brewkeg.BlockBegin, brewkeg.BlockEnd, body)
 
-	if n := strings.Count(twice, blockBegin); n != 1 {
+	if n := strings.Count(twice, brewkeg.BlockBegin); n != 1 {
 		t.Fatalf("expected 1 block after two runs, got %d", n)
 	}
 	if !strings.Contains(twice, "export FOO=1") {
@@ -23,12 +28,12 @@ func TestBlockIdempotent(t *testing.T) {
 
 func TestBlockStripIsByteExact(t *testing.T) {
 	orig := "model = \"gpt-5\"\nmodel_provider = \"openai\"\n\n[tui]\ntheme = \"dark\"\n"
-	withBlock := setRootKey(applyBlock(orig, blockBegin, blockEnd, "[model_providers.brewkeg]\nname = \"brewkeg\""), "model_provider", `"brewkeg"`)
+	withBlock := brewkeg.SetRootKey(brewkeg.ApplyBlock(orig, brewkeg.BlockBegin, brewkeg.BlockEnd, "[model_providers.brewkeg]\nname = \"brewkeg\""), "model_provider", `"brewkeg"`)
 	if !strings.Contains(withBlock, "# brewkeg replaced: model_provider") {
 		t.Fatal("foreign model_provider was not commented out, TOML would have a duplicate key")
 	}
 
-	back, _ := stripBlock(withBlock)
+	back, _ := brewkeg.StripBlock(withBlock)
 	back = strings.Replace(back, "# brewkeg replaced: ", "", 1)
 	if back != strings.TrimRight(orig, "\n")+"\n" {
 		t.Fatalf("round trip changed the file:\n got: %q\nwant: %q", back, orig)
@@ -37,7 +42,7 @@ func TestBlockStripIsByteExact(t *testing.T) {
 
 func TestRootKeyStaysAboveFirstTable(t *testing.T) {
 	in := "model = \"gpt-5\"\n\n[tui]\ntheme = \"dark\"\n"
-	out := setRootKey(in, "model_provider", `"brewkeg"`)
+	out := brewkeg.SetRootKey(in, "model_provider", `"brewkeg"`)
 
 	lines := strings.Split(out, "\n")
 	keyLine, tableLine := -1, -1
@@ -67,27 +72,27 @@ func TestRestoreRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	b := &Backup{ID: "test", CreatedAt: nowISO()}
-	if err := b.capture("claude-cli", rc); err != nil {
+	b := brewkeg.NewBackup("https://brewkeg.dev")
+	if err := b.Capture("claude-cli", rc); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(rc, []byte(applyBlock(orig, blockBegin, blockEnd, "export ANTHROPIC_BASE_URL=\"x\"")), 0o644); err != nil {
+	if err := os.WriteFile(rc, []byte(brewkeg.ApplyBlock(orig, brewkeg.BlockBegin, brewkeg.BlockEnd, "export ANTHROPIC_BASE_URL=\"x\"")), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
 	// A second setup over the same file must not capture the first run's output.
-	b2 := &Backup{ID: "test2", CreatedAt: nowISO()}
-	if err := b2.capture("claude-cli", rc); err != nil {
+	b2 := brewkeg.NewBackup("https://brewkeg.dev")
+	if err := b2.Capture("claude-cli", rc); err != nil {
 		t.Fatal(err)
 	}
-	if got := readFile(filepath.Join(backupDir("test2"), sanitize(rc))); got != orig {
+	if got := brewkeg.ReadFile(filepath.Join(brewkeg.BackupDir(b2.ID), b2.Entries[0].BackupFile)); got != orig {
 		t.Fatalf("second backup is not the pre-brewkeg state:\n got: %q\nwant: %q", got, orig)
 	}
 
-	if _, err := b2.restore(false); err != nil {
+	if _, err := b2.Restore(false); err != nil {
 		t.Fatal(err)
 	}
-	if got := readFile(rc); got != orig {
+	if got := brewkeg.ReadFile(rc); got != orig {
 		t.Fatalf("restore was not byte-exact:\n got: %q\nwant: %q", got, orig)
 	}
 }
@@ -97,14 +102,14 @@ func TestRestoreDeletesFileBrewkegCreated(t *testing.T) {
 	t.Setenv("HOME", home)
 	rc := filepath.Join(home, ".zshrc")
 
-	b := &Backup{ID: "test", CreatedAt: nowISO()}
-	if err := b.capture("claude-cli", rc); err != nil {
+	b := brewkeg.NewBackup("https://brewkeg.dev")
+	if err := b.Capture("claude-cli", rc); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(rc, []byte(applyBlock("", blockBegin, blockEnd, "export X=1")), 0o644); err != nil {
+	if err := os.WriteFile(rc, []byte(brewkeg.ApplyBlock("", brewkeg.BlockBegin, brewkeg.BlockEnd, "export X=1")), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := b.restore(false); err != nil {
+	if _, err := b.Restore(false); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(rc); !os.IsNotExist(err) {

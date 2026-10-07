@@ -1,6 +1,11 @@
 # built binary
 /brewkeg
 /brewkeg.exe
+/desktop/desktop
+
+# wails output + local design screenshots
+/desktop/build/
+/desktop/frontend/.preview/
 
 # goreleaser output
 /dist/

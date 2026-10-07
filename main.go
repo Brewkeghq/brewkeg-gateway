@@ -43,7 +43,7 @@ func main() {
 	case "restore", "undo":
 		os.Exit(runRestore(args[1:]))
 	case "backups":
-		os.Exit(runBackups(args[1:]))
+		os.Exit(runBackups())
 	case "status", "doctor":
 		os.Exit(runStatus())
 	case "uninstall":
