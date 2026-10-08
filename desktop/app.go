@@ -445,7 +445,7 @@ func (a *App) SetDevBaseURL(raw string) (string, error) {
 	if err := brewkeg.SetDevBaseURL(raw); err != nil {
 		return "", err
 	}
-	a.emitDevChanged()
+	a.emitDevChanged(false)
 	return brewkeg.BaseURL(), nil
 }
 
@@ -455,7 +455,7 @@ func (a *App) SetDevMode(on bool) (string, error) {
 	if err := brewkeg.SetDevMode(on); err != nil {
 		return "", err
 	}
-	a.emitDevChanged()
+	a.emitDevChanged(false)
 	return brewkeg.BaseURL(), nil
 }
 
@@ -465,7 +465,7 @@ func (a *App) ClearDevMode() (string, error) {
 	if err := brewkeg.ClearDevSettings(); err != nil {
 		return "", err
 	}
-	a.emitDevChanged()
+	a.emitDevChanged(false)
 	return brewkeg.BaseURL(), nil
 }
 
@@ -483,6 +483,12 @@ func (a *App) TestGateway() string {
 // emitDevChanged tells the window the gateway moved. Without it the panel keeps
 // showing the old URL while the next write uses the new one, which is the exact
 // confusion developer mode is supposed to remove.
-func (a *App) emitDevChanged() {
-	runtime.EventsEmit(a.ctx, "dev:changed")
+// revealPanel is set when the menu was the thing that opened developer mode.
+// The window hides the panel whenever there is no URL yet — correct on its own,
+// because the panel is not something to show a user who never asked — but it
+// makes the menu item a dead end: the menu says "enter a URL in the window" and
+// the window has no field to enter it in. The menu is the only way to reach
+// developer mode, so the menu has to be able to open the panel.
+func (a *App) emitDevChanged(revealPanel bool) {
+	runtime.EventsEmit(a.ctx, "dev:changed", revealPanel)
 }

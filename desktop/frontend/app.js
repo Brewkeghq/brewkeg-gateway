@@ -75,6 +75,10 @@ const el = (id) => document.getElementById(id);
 // two Configure calls racing would each back up the other's partial state.
 let state = null;
 let restartHints = [];
+// The menu can ask for the developer panel to open. It cannot be derived from
+// state: on a fresh install there is no URL yet, so the panel would be hidden
+// and the menu item would be a dead end.
+let devPanelForced = false;
 
 boot().catch((e) => say(`Could not start: ${e}`, true));
 
@@ -98,7 +102,10 @@ async function boot() {
   // The menu toggles developer mode too, and the window has no other way to
   // learn about it. Without this the banner and the field go stale while the
   // next write already uses the new gateway.
-  window.runtime?.EventsOn?.("dev:changed", () => refresh());
+  window.runtime?.EventsOn?.("dev:changed", (reveal) => {
+    if (reveal) devPanelForced = true;
+    refresh();
+  });
   renderDev();
   el("get-key").title = `Get your API key at ${state.baseUrl}/dashboard/keys`;
   refreshSpec();
@@ -488,7 +495,7 @@ function renderDev() {
   // The panel is shown when developer mode is on, or when the menu asked for a
   // URL to be typed (devMode off but an override remembered).
   const panel = el("devpanel");
-  panel.hidden = !(state.devMode || !!state.devBaseUrl);
+  panel.hidden = !(state.devMode || !!state.devBaseUrl || devPanelForced);
   if (!panel.hidden) {
     const input = el("dev-url");
     if (document.activeElement !== input) input.value = state.devBaseUrl || "";
@@ -509,6 +516,7 @@ async function saveDevURL() {
   const url = el("dev-url").value.trim();
   try {
     const now = await api.SetDevBaseURL(url);
+    devPanelForced = false;
     say(`Now pointing at ${now}. The next switch you flip writes that URL.`);
     refresh();
   } catch (e) {
@@ -530,6 +538,7 @@ async function testGateway() {
 // should not keep the hostname of an internal gateway on disk.
 async function clearDevMode() {
   await api.ClearDevMode();
+  devPanelForced = false;
   el("dev-url").value = "";
   say("Developer mode off. Back to brewkeg.dev.");
   refresh();

@@ -109,14 +109,14 @@ func (a *App) ToggleDevModeFromMenu() {
 			_, _ = a.info("Could not turn developer mode off: "+err.Error(), "Developer Mode")
 			return
 		}
-		a.emitDevChanged()
+		a.emitDevChanged(false)
 		return
 	}
 	s := brewkeg.ReadDevSettings()
 	if s.BaseURL == "" {
 		// Nothing to turn on yet — send them to the window, which is the only
 		// place a URL can be typed.
-		a.emitDevChanged()
+		a.emitDevChanged(true)
 		_, _ = a.info("Enter a gateway URL in the window to turn developer mode on.", "Developer Mode")
 		return
 	}
@@ -129,7 +129,7 @@ func (a *App) ToggleDevModeFromMenu() {
 		_, _ = a.info("Could not turn developer mode on: "+err.Error(), "Developer Mode")
 		return
 	}
-	a.emitDevChanged()
+	a.emitDevChanged(false)
 }
 
 func appMenu(a *App) *menu.Menu {
