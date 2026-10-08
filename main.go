@@ -1,3 +1,5 @@
+// Copyright (c) 2026 brewkeg. All rights reserved.
+// See LICENSE — this software is proprietary and not licensed for reuse.
 package main
 
 import (
@@ -61,6 +63,7 @@ func main() {
 		os.Exit(runUninstall(args[1:]))
 	case "version", "--version", "-v":
 		fmt.Println("brewkeg " + brewkeg.Version)
+		fmt.Println("(c) 2026 brewkeg. Proprietary — see LICENSE.")
 	case "help", "--help", "-h":
 		fmt.Print(usage)
 	default:

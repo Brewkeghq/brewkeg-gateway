@@ -7,6 +7,9 @@
 /desktop/build/
 /desktop/frontend/.preview/
 
+# browser-automation scratch (snapshots + console logs)
+.playwright-cli/
+
 # goreleaser output
 /dist/
 

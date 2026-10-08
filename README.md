@@ -46,3 +46,7 @@ go vet ./... && go test ./...
 cd desktop && wails build -clean
 goreleaser check
 ```
+
+---
+
+© 2026 brewkeg. All rights reserved. Proprietary — see [LICENSE](LICENSE).

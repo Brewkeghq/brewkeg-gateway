@@ -438,6 +438,14 @@ body.busy .switch { transition: none; }
 .foot { margin: 20px 0 0; text-align: center; }
 .foot .linkish { font-size: 11px; color: var(--faint); }
 .foot .linkish:hover { color: var(--muted-foreground); }
+.foot .legal {
+  display: block;
+  margin-top: 4px;
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--faint);
+  opacity: 0.75;
+}
 
 @keyframes rise {
   from { opacity: 0; transform: translateY(5px); }

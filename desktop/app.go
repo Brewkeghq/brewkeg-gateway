@@ -265,6 +265,92 @@ func (a *App) RevealBackupDir() {
 	runtime.BrowserOpenURL(a.ctx, "file://"+brewkeg.BackupsRoot())
 }
 
+// ResetResult is what a reset actually did, in the same shape the window uses
+// for every other outcome: what changed, where the undo lives, and one honest
+// sentence.
+type ResetResult struct {
+	Message  string                `json:"message"`
+	BackupID string                `json:"backupId,omitempty"`
+	Results  []brewkeg.ApplyResult `json:"results"`
+	Reset    bool                  `json:"reset"`
+}
+
+// Reset returns the machine to its pre-brewkeg state: disconnect every service
+// brewkeg is inside, forget the stored key, drop config.json, clear the
+// gateway-keyed caches. One backup covers the whole thing, so it is undoable.
+//
+// dryRun reports the plan and writes nothing. The menu item uses it to describe
+// the action before the confirmation, rather than guessing what is configured.
+func (a *App) Reset(dryRun bool) ResetResult {
+	spec := brewkeg.DefaultSpec()
+	if fetched, err := brewkeg.FetchSpec(a.context(), brewkeg.BaseURL()); err == nil && len(fetched.Targets) > 0 {
+		spec = fetched
+	}
+	plan, b, results, err := brewkeg.Reset(spec, dryRun)
+	out := ResetResult{Results: results, Reset: !dryRun}
+	if b != nil {
+		out.BackupID = b.ID
+	}
+	if dryRun {
+		out.Message = brewkeg.ResetSummary(plan, results)
+		return out
+	}
+	if err != nil {
+		out.Message = "Reset stopped: " + err.Error()
+		return out
+	}
+	out.Message = brewkeg.ResetSummary(plan, results) + " A backup was saved first."
+	return out
+}
+
+// ResetFromMenu is the menu item. A destructive action behind one click is not
+// an action; this describes what will change, using the same plan the run
+// acts on, and only proceeds if the user says yes.
+func (a *App) ResetFromMenu() {
+	plan := a.Reset(true)
+	var lines []string
+	if len(plan.Results) == 0 && plan.Message == "" {
+		lines = append(lines, "Nothing is configured — nothing would change.")
+	} else if len(plan.Results) > 0 {
+		names := make([]string, 0, len(plan.Results))
+		for _, r := range plan.Results {
+			names = append(names, r.Label)
+		}
+		lines = append(lines, "Disconnect: "+strings.Join(names, ", ")+".")
+	}
+	if plan.BackupID != "" {
+		lines = append(lines, "\nA backup is saved first, so this can be undone.")
+	}
+	if ok, _ := a.ask("Reset Gateway?", strings.Join(lines, "\n"), "Reset", "Cancel"); !ok {
+		return
+	}
+	res := a.Reset(false)
+	_, _ = a.info(res.Message, "Reset Gateway")
+}
+
+// ask and info are thin wrappers so every dialog in the app goes through one
+// pair of calls — the macOS question/alert variants take different button
+// orders and getting that wrong silently swaps Confirm and Cancel.
+func (a *App) ask(title, message, confirm, cancel string) (bool, error) {
+	return runtime.MessageDialog(a.ctx, runtime.MessageDialogOptions{
+		Type:          runtime.QuestionDialog,
+		Title:         title,
+		Message:       message,
+		Buttons:       []string{confirm, cancel},
+		DefaultButton: cancel,
+		CancelButton:  cancel,
+	})
+}
+
+func (a *App) info(message, title string) (string, error) {
+	return runtime.MessageDialog(a.ctx, runtime.MessageDialogOptions{
+		Type:    runtime.InfoDialog,
+		Title:   title,
+		Message: message,
+		Buttons: []string{"OK"},
+	})
+}
+
 // RefreshSpec asks the gateway what to write for each tool. The app renders
 // from the built-in spec immediately and calls this in the background, so a
 // change to how a tool stores its config reaches users without a new release.

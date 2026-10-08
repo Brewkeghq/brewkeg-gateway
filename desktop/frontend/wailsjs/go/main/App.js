@@ -38,6 +38,10 @@ export function RefreshSpec() {
   return window['go']['main']['App']['RefreshSpec']();
 }
 
+export function Reset(arg1) {
+  return window['go']['main']['App']['Reset'](arg1);
+}
+
 export function Restore(arg1) {
   return window['go']['main']['App']['Restore'](arg1);
 }

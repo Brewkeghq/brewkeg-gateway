@@ -21,6 +21,8 @@ export function OpenUpdate(arg1:string):Promise<void>;
 
 export function RefreshSpec():Promise<brewkeg.Spec>;
 
+export function Reset(arg1:boolean):Promise<main.ResetResult>;
+
 export function Restore(arg1:string):Promise<string>;
 
 export function RevealBackupDir():Promise<void>;

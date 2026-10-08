@@ -79,11 +79,11 @@ func zcodeRules(t *testing.T) (providers, models []any) {
 
 func opts() Options {
 	return Options{
-		APIKey:       "bk_live_test",
-		BaseURL:      "https://brewkeg.dev",
-		MainModel:    "claude-opus-5",
-		SonnetModel:  "claude-sonnet-5",
-		FastModel:    "claude-haiku-4-5",
+		APIKey:      "bk_live_test",
+		BaseURL:     "https://brewkeg.dev",
+		MainModel:   "claude-opus-5",
+		SonnetModel: "claude-sonnet-5",
+		FastModel:   "claude-haiku-4-5",
 	}
 }
 

@@ -117,9 +117,9 @@ func ClaudeDesktopAppliedConfig() string {
 // write side had to match a GUI we could not see. It does not. The app bootstraps
 // the directory itself on first access, and its own code is the spec:
 //
-//   let id = randomUUID();          // 36 chars, [a-f0-9-]
-//   write <id>.json  = {}
-//   write _meta.json = { appliedId: id, entries: [{ id, name: "Default" }] }
+//	let id = randomUUID();          // 36 chars, [a-f0-9-]
+//	write <id>.json  = {}
+//	write _meta.json = { appliedId: id, entries: [{ id, name: "Default" }] }
 //
 // Reproducing that is not a guess — it is the same three lines, and an id we
 // mint passes the same guard the app applies to ids it reads. The result is that
