@@ -19,10 +19,19 @@ die() { printf 'error: %s\n' "$*" >&2; exit 1; }
 
 os=$(uname -s | tr '[:upper:]' '[:lower:]')
 case "$os" in
-  darwin) asset_os=macos;    install_dir=/Applications ;;
+  darwin) asset_os=macos;    install_dir="${BREWKEG_APP_DIR:-/Applications}" ;;
   linux)  asset_os=linux;    install_dir="$HOME/.local/share/brewkeg" ;;
   *) die "unsupported OS: $os — macOS and Linux only. Windows: install-app.ps1" ;;
 esac
+
+# /Applications needs a writable session on every macOS user account, but a
+# locked-down or managed machine can deny it. Falling back to ~/Applications
+# beats aborting the install when the only problem is permissions.
+if [ "$os" = darwin ] && [ ! -w "$install_dir" ] && [ -z "${BREWKEG_APP_DIR:-}" ]; then
+  say "→ $install_dir is not writable, using $HOME/Applications instead"
+  install_dir="$HOME/Applications"
+  mkdir -p "$install_dir"
+fi
 
 tag=$(curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest" \
   | sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n1)
