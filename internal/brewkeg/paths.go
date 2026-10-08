@@ -79,6 +79,14 @@ func rcCandidates() []string {
 // would mean the app silently never sees (or writes) the user's shell config,
 // so when the shell is unknown we use whichever rc file actually exists.
 func ShellRC() string {
+	// Windows has no rc files in this list, and a GUI launch has no $SHELL at
+	// all, so the fallback below would return "" and the block would be
+	// silently skipped — a Claude Code CLI user would get their settings.json
+	// env but no exports, and the tool would look configured in one place and
+	// not the other. PowerShell has exactly one profile; use it.
+	if isWindows() {
+		return WindowsProfile()
+	}
 	switch shell := os.Getenv("SHELL"); {
 	case strings.Contains(shell, "zsh"):
 		return HomeJoin(".zshrc")

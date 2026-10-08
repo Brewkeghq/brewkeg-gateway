@@ -25,22 +25,34 @@ esac
 
 say "→ fetching latest brewkeg release for ${os}/${arch}"
 
+# The tag and the version are different strings. Releases are tagged
+# `cli-v0.2.0`, so the download URL needs the FULL tag while the asset name
+# needs only the version — assuming they are the same string is how this
+# installer ends up curling a URL that does not exist.
 tag=$(curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest" \
-  | sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"v\([^"]*\)".*/\1/p' | head -n1)
+  | sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n1)
 [ -n "$tag" ] || die "could not read the latest release from GitHub"
 
-name="brewkeg_${tag}_${os}_${arch}"
-base="https://github.com/${REPO}/releases/download/v${tag}"
+version=$(printf '%s' "$tag" | sed 's/^cli-//; s/^v//')
+[ -n "$version" ] || die "could not read a version from the tag $tag"
+
+# GoReleaser names assets with the capitalised GOOS: Darwin, Linux.
+# `tr` rather than `sed 's/^./\u&/'`: the \u escape is a GNU extension, and
+# BSD sed — the one on every Mac — passes it through literally, producing an
+# asset called "brewkeg_0.2.0_udarwin_arm64".
+gos=$(printf '%s' "${os:0:1}" | tr '[:lower:]' '[:upper:]')${os:1}
+name="brewkeg_${version}_${gos}_${arch}"
+base="https://github.com/${REPO}/releases/download/${tag}"
 
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 
-say "→ downloading brewkeg ${tag}"
+say "→ downloading brewkeg ${version}"
 curl -fsSL "$base/${name}" -o "$tmp/brewkeg" || die "download failed: $base/${name}"
 chmod +x "$tmp/brewkeg"
 
 say "→ verifying checksum"
-curl -fsSL "$base/brewkeg_${tag}_checksums.txt" -o "$tmp/sums" 2>/dev/null || true
+curl -fsSL "$base/brewkeg_${version}_checksums.txt" -o "$tmp/sums" 2>/dev/null || true
 if [ -s "$tmp/sums" ]; then
   expected=$(awk -v f="$name" '$2 == f || $2 == "*"f {print $1}' "$tmp/sums" | head -n1)
   actual=$(sha256sum "$tmp/brewkeg" 2>/dev/null | awk '{print $1}' || shasum -a 256 "$tmp/brewkeg" | awk '{print $1}')

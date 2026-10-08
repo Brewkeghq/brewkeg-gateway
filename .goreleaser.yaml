@@ -22,7 +22,10 @@ builds:
       - amd64
       - arm64
     ldflags:
-      - -s -w -X main.version={{.Version}}
+      # The symbol is internal/brewkeg.Version, NOT a var in package main.
+      # `-X main.version=` names a symbol that does not exist, so the linker
+      # silently stamped nothing and every build reported 0.1.0.
+      - -s -w -X github.com/brewkeghq/brewkeg-gateway/internal/brewkeg.Version={{.Version}}
 
 archives:
   - id: brewkeg
