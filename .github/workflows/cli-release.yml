@@ -107,6 +107,12 @@ jobs:
             platform: linux/amd64
             package: desktop/build/bin/brewkeg-gateway
     runs-on: ${{ matrix.os }}
+    # Declared at job level because a step's `if:` cannot read `secrets.*`
+    # directly. Empty string when no cert is configured, which is exactly what
+    # the signing steps test to decide whether to run.
+    env:
+      MACOS_CERT_P12: ${{ secrets.MACOS_CERT_P12 }}
+      WINDOWS_CERT_PFX: ${{ secrets.WINDOWS_CERT_PFX }}
     steps:
       # Same `path: cli` reasoning as the job above: the module root is the
       # repo root, so `go vet ./...` and `../assets/appicon.png` only resolve
@@ -157,6 +163,85 @@ jobs:
           mkdir -p build
           cp ../assets/appicon.png build/appicon.png
           wails build -clean -platform ${{ matrix.platform }}
+
+      # An unsigned .app downloaded from a browser lands with the quarantine
+      # xattr, and Gatekeeper refuses to open it: "Apple could not verify ...
+      # is free of malware". That is not malware and not a false positive we can
+      # suppress in code — it is a missing signature. Only a Developer ID
+      # Application certificate plus notarisation clears it. The step is
+      # conditional so a fork with no certs still builds; the release it makes
+      # is simply unsigned and users must right-click → Open.
+      - name: Sign and notarize (macOS)
+        if: runner.os == 'macOS' && env.MACOS_CERT_P12 != ''
+        working-directory: cli/desktop
+        env:
+          MACOS_CERT_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          set -euo pipefail
+          CERT="$RUNNER_TEMP/brewkeg.p12"
+          KEYCHAIN="$RUNNER_TEMP/signing.keychain-db"
+          echo "$MACOS_CERT_PASSWORD" | openssl base64 -d -out "$CERT"
+
+          # A throwaway keychain, deleted in `always:` cleanup below. The
+          # default login keychain is not importable without a GUI session on a
+          # runner.
+          security create-keychain -p ci "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p ci "$KEYCHAIN"
+          security import "$CERT" -k "$KEYCHAIN" -P "$MACOS_CERT_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k ci "$KEYCHAIN" >/dev/null
+          security list-keychains -d user -s "$KEYCHAIN"
+
+          # --deep is deprecated and would sign our own nested code with the
+          # outer identity. Wails puts one Mach-O in Contents/MacOS and the
+          # web assets are resources, so an explicit single-binary sign is
+          # both correct and verifiable.
+          codesign --force --timestamp --options runtime \
+            --entitlements entitlements.plist \
+            --sign "Developer ID Application: brewkeg ($APPLE_TEAM_ID)" \
+            build/bin/brewkeg-gateway.app
+          codesign --verify --deep --strict --verbose=2 build/bin/brewkeg-gateway.app
+
+          # Notarise the .app, not the zip. Apple rejects a zip outright, and
+          # stapling has to happen on the bundle before ditto copies it.
+          ditto -c -k --keepParent build/bin/brewkeg-gateway.app "$RUNNER_TEMP/submit.zip"
+          xcrun notarytool submit "$RUNNER_TEMP/submit.zip" \
+            --apple-id "$APPLE_ID" \
+            --password "$APPLE_APP_PASSWORD" \
+            --team-id "$APPLE_TEAM_ID" \
+            --wait
+          xcrun stapler staple build/bin/brewkeg-gateway.app
+          xcrun stapler validate build/bin/brewkeg-gateway.app
+          spctl --assess --type execute --verbose=2 build/bin/brewkeg-gateway.app
+
+      - name: Clean up signing material
+        if: always() && runner.os == 'macOS' && env.MACOS_CERT_P12 != ''
+        run: |
+          security delete-keychain "$RUNNER_TEMP/signing.keychain-db" 2>/dev/null || true
+          rm -f "$RUNNER_TEMP/brewkeg.p12"
+
+      # Windows SmartScreen shows "Windows protected your PC" for any unsigned
+      # EXE. An Authenticode signature from a CA-issued cert is the fix;
+      # self-signed certificates make the warning worse, not better, because
+      # SmartScreen trusts the chain, not the presence of a signature.
+      - name: Sign (Windows)
+        if: runner.os == 'Windows' && env.WINDOWS_CERT_PFX != ''
+        working-directory: cli/desktop
+        env:
+          WINDOWS_CERT_PASSWORD: ${{ secrets.WINDOWS_CERT_PASSWORD }}
+        run: |
+          $pfx = Join-Path $env:RUNNER_TEMP 'brewkeg.pfx'
+          [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:WINDOWS_CERT_PFX))
+          # A 64-bit cert must sit in the 64-bit store; importing it into the
+          # 32-bit view finds no root and fails with an unhelpful error.
+          $sig = (Get-Command signtool.exe -ErrorAction Stop).Source
+          & $sig sign /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 `
+            /f $pfx /p $env:WINDOWS_CERT_PASSWORD build/bin/brewkeg-gateway.exe
+          & $sig verify /pa /v build/bin/brewkeg-gateway.exe
+          Remove-Item $pfx -Force
 
       - name: Package (macOS)
         if: runner.os == 'macOS'

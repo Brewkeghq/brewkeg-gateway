@@ -46,6 +46,41 @@ first and lists what it found.
 
 Not supported: [docs/unsupported-targets.md](docs/unsupported-targets.md).
 
+## "Could not verify … is free of malware" / "Windows protected your PC"
+
+That is a **missing code signature**, not malware. Both desktop platforms block
+unsigned downloads by default, and neither can be suppressed from inside the
+app.
+
+| OS | What you'll see | Why |
+|---|---|---|
+| macOS | *"Apple could not verify …"* | Gatekeeper. A browser puts the quarantine flag on anything it downloads; an unnotarised app cannot be opened. |
+| Windows | *"Windows protected your PC"* | SmartScreen. Unsigned `.exe`, same shape. |
+| Linux | nothing | No equivalent gate. |
+
+The fix is a **Developer ID Application** certificate plus Apple notarisation
+(macOS), and a CA-issued **Authenticode** certificate (Windows). CI is wired for
+both — add these repository secrets and the next tag signs automatically:
+
+| Secret | Used for |
+|---|---|
+| `MACOS_CERT_P12` | base64 `.p12` Developer ID Application export |
+| `MACOS_CERT_PASSWORD` | its password |
+| `APPLE_ID`, `APPLE_APP_PASSWORD`, `APPLE_TEAM_ID` | `notarytool` submission |
+| `WINDOWS_CERT_PFX` | base64 Authenticode `.pfx` |
+| `WINDOWS_CERT_PASSWORD` | its password |
+
+Without them the build still succeeds and the artifacts are simply unsigned.
+
+**Unblock the copy you already have:**
+
+```bash
+# macOS — right-click → Open also works, once per download
+xattr -dr com.apple.quarantine /Applications/brewkeg-gateway.app
+
+# Windows — Properties → Unblock at the bottom of the General tab
+```
+
 ## Build
 
 ```bash
