@@ -131,11 +131,12 @@ jobs:
         with:
           node-version: '20'
 
-      # Wails' Linux build links GTK and WebKitGTK through cgo. The GitHub
-      # runner image does not carry the -dev headers, so the build fails at
-      # pkg-config — a missing-toolchain error, not a code error. ubuntu-24.04
-      # is where webkit2gtk-4.0 is the right series; ubuntu-22.04 shipped
-      # 4.1 and needed a different pkg-config name.
+      # Wails' Linux build links GTK and WebKitGTK through cgo. The runner
+      # image carries no -dev headers, so the build dies at pkg-config — a
+      # missing toolchain, not a code error. ubuntu-24.04 ships the 4.1 series
+      # and dropped the 4.0 package entirely, which is why the build also needs
+      # Wails' webkit2_41 tag: that is what switches the pkg-config name to
+      # webkit2gtk-4.1. Installing 4.1 without the tag fails the same way.
       - name: Install GTK and WebKit dev packages
         if: runner.os == 'Linux'
         working-directory: cli
@@ -143,7 +144,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y \
             libgtk-3-dev \
-            libwebkit2gtk-4.0-dev \
+            libwebkit2gtk-4.1-dev \
             libayatana-appindicator3-dev \
             librsvg2-dev
 
@@ -162,7 +163,7 @@ jobs:
         run: |
           mkdir -p build
           cp ../assets/appicon.png build/appicon.png
-          wails build -clean -platform ${{ matrix.platform }}
+          wails build -clean -platform ${{ matrix.platform }} ${{ runner.os == 'Linux' && '-tags webkit2_41' || '' }}
 
       # An unsigned .app downloaded from a browser lands with the quarantine
       # xattr, and Gatekeeper refuses to open it: "Apple could not verify ...
@@ -246,17 +247,17 @@ jobs:
       - name: Package (macOS)
         if: runner.os == 'macOS'
         working-directory: cli/desktop/build/bin
-        run: ditto -c -k --keepParent brewkeg-gateway.app "brewkeg-gateway_${GITHUB_REF_NAME}_macos.zip"
+        run: ditto -c -k --keepParent brewkeg-gateway.app "brewkeg-gateway_${{ github.ref_name }}_macos.zip"
 
       - name: Package (Windows)
         if: runner.os == 'Windows'
         working-directory: cli/desktop/build/bin
-        run: 7z a "brewkeg-gateway_${GITHUB_REF_NAME}_windows.zip" brewkeg-gateway.exe
+        run: 7z a "brewkeg-gateway_${{ github.ref_name }}_windows.zip" brewkeg-gateway.exe
 
       - name: Package (Linux)
         if: runner.os == 'Linux'
         working-directory: cli/desktop/build/bin
-        run: tar czf "brewkeg-gateway_${GITHUB_REF_NAME}_linux.tar.gz" brewkeg-gateway
+        run: tar czf "brewkeg-gateway_${{ github.ref_name }}_linux.tar.gz" brewkeg-gateway
 
       - name: Attach to release
         shell: bash
@@ -266,9 +267,9 @@ jobs:
           # the Windows name differently from the one it packaged (`tr -d 'v'`),
           # so it only ever attached by falling back to "newest file in dir".
           case "${{ runner.os }}" in
-            macOS) asset="brewkeg-gateway_${GITHUB_REF_NAME}_macos.zip" ;;
-            Windows) asset="brewkeg-gateway_${GITHUB_REF_NAME}_windows.zip" ;;
-            *) asset="brewkeg-gateway_${GITHUB_REF_NAME}_linux.tar.gz" ;;
+            macOS) asset="brewkeg-gateway_${{ github.ref_name }}_macos.zip" ;;
+            Windows) asset="brewkeg-gateway_${{ github.ref_name }}_windows.zip" ;;
+            *) asset="brewkeg-gateway_${{ github.ref_name }}_linux.tar.gz" ;;
           esac
           if [ ! -f "$asset" ]; then
             echo "expected asset missing: $asset" >&2
