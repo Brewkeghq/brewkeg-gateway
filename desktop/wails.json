@@ -11,7 +11,7 @@
   },
   "info": {
     "productName": "Brewkeg Gateway",
-    "productVersion": "0.2.0",
+    "productVersion": "0.2.1",
     "comments": "Brewkeg Gateway — point Claude Code, Codex, Claude Desktop and ZCode at brewkeg"
   }
 }

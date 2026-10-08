@@ -126,8 +126,7 @@ func TestCodexAddsTableWhenAbsent(t *testing.T) {
 }
 
 func TestShellRCKeepsUserLinesAndReplacesOldBlock(t *testing.T) {
-	h := home(t)
-	rc := filepath.Join(h, ".zshrc")
+	home(t) // seeds a temp HOME; the rc file comes from the resolver below.
 	before := strings.Join([]string{
 		"export EDITOR=vim",
 		`alias gs="git status"`,
@@ -137,9 +136,7 @@ func TestShellRCKeepsUserLinesAndReplacesOldBlock(t *testing.T) {
 		`alias ll="ls -la"`,
 		"",
 	}, "\n")
-	if err := os.WriteFile(rc, []byte(before), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	rc := seedShellRC(t, before)
 
 	if _, _, err := Apply([]string{"claude-cli"}, Options{APIKey: "bk_live_K"}); err != nil {
 		t.Fatal(err)
@@ -268,8 +265,13 @@ func TestStatusAllWorksWithoutShellEnv(t *testing.T) {
 }
 
 // ShellRC must fall back to an rc file that exists, so a GUI-launched app still
-// finds the right place to write exports.
+// finds the right place to write exports. Windows has no rc files in the
+// candidate list at all — it resolves to the PowerShell profile, which
+// paths_test.go covers on a Windows runner.
 func TestShellRCFallsBackToExistingFile(t *testing.T) {
+	if isWindows() {
+		t.Skip("no POSIX rc files on Windows; see TestWindowsShellBlockGoesToThePowerShellProfile")
+	}
 	h := home(t)
 	t.Setenv("SHELL", "")
 	if err := os.WriteFile(filepath.Join(h, ".bashrc"), []byte("# bash\n"), 0o644); err != nil {

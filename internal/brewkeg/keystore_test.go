@@ -38,6 +38,7 @@ func TestStoredKeySurvivesForCodexOnlySetup(t *testing.T) {
 	}
 
 	// Per the Unix contract: readable only by the owner.
+	requirePOSIXPerms(t)
 	fi, err := os.Stat(KeyStorePath())
 	if err != nil {
 		t.Fatalf("stat key store: %v", err)
@@ -147,6 +148,7 @@ func TestBrewkegHomeIsOwnerOnly(t *testing.T) {
 	if _, _, err := ApplyWithSpec(DefaultSpec(), []string{"codex"}, Options{APIKey: key}); err != nil {
 		t.Fatalf("apply: %v", err)
 	}
+	requirePOSIXPerms(t)
 	for _, d := range []string{brewkegHome(), BackupsRoot()} {
 		fi, err := os.Stat(d)
 		if err != nil {
@@ -162,6 +164,7 @@ func TestBrewkegHomeIsOwnerOnly(t *testing.T) {
 // tighten it, so the chmod is load-bearing.
 func TestLooseBrewkegHomeGetsTightened(t *testing.T) {
 	withTempHome(t)
+	requirePOSIXPerms(t)
 
 	if err := os.MkdirAll(brewkegHome(), 0o755); err != nil {
 		t.Fatal(err)

@@ -125,6 +125,22 @@ jobs:
         with:
           node-version: '20'
 
+      # Wails' Linux build links GTK and WebKitGTK through cgo. The GitHub
+      # runner image does not carry the -dev headers, so the build fails at
+      # pkg-config — a missing-toolchain error, not a code error. ubuntu-24.04
+      # is where webkit2gtk-4.0 is the right series; ubuntu-22.04 shipped
+      # 4.1 and needed a different pkg-config name.
+      - name: Install GTK and WebKit dev packages
+        if: runner.os == 'Linux'
+        working-directory: cli
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libgtk-3-dev \
+            libwebkit2gtk-4.0-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev
+
       - name: Install Wails
         working-directory: cli
         run: |

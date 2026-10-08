@@ -17,6 +17,8 @@ func TestUserConfigRoundTrip(t *testing.T) {
 		t.Fatalf("round trip lost something: %+v", got)
 	}
 
+	// The round trip above is real on every OS; only the mode bits are not.
+	requirePOSIXPerms(t)
 	fi, err := os.Stat(UserConfigPath())
 	if err != nil {
 		t.Fatal(err)
