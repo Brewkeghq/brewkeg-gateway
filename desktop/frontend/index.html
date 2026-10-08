@@ -71,6 +71,28 @@
 
       <p class="note" id="note" hidden></p>
 
+      <!-- Developer mode. Hidden until the menu reveals it, but the banner is
+           the opposite: it stays visible for as long as the app is pointed
+           somewhere that is not brewkeg.dev, because the next switch writes
+           that URL into real config files. -->
+      <p class="devbanner" id="devbanner" hidden></p>
+
+      <section class="devpanel" id="devpanel" hidden>
+        <div class="dev-row">
+          <input id="dev-url" type="text" spellcheck="false" autocomplete="off"
+                 placeholder="http://localhost:3000" />
+          <button class="btn-quiet" id="dev-save" type="button">Save</button>
+        </div>
+        <p class="dev-note" id="dev-note">
+          The gateway URL the app talks to <em>and</em> writes into your tool configs.
+          Leave empty to go back to <span id="dev-default">brewkeg.dev</span>.
+        </p>
+        <div class="dev-actions">
+          <button class="btn-quiet" id="dev-test" type="button">Test</button>
+          <button class="btn-quiet" id="dev-off" type="button">Developer mode off</button>
+        </div>
+      </section>
+
       <p class="foot">
         <button class="linkish" id="repo" type="button">github.com/brewkeghq/brewkeg-gateway</button>
         <span class="legal">© 2026 brewkeg · proprietary</span>

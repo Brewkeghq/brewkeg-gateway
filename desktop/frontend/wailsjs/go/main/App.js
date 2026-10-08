@@ -14,6 +14,10 @@ export function CheckKey(arg1) {
   return window['go']['main']['App']['CheckKey'](arg1);
 }
 
+export function ClearDevMode() {
+  return window['go']['main']['App']['ClearDevMode']();
+}
+
 export function Configure(arg1, arg2, arg3, arg4, arg5, arg6) {
   return window['go']['main']['App']['Configure'](arg1, arg2, arg3, arg4, arg5, arg6);
 }
@@ -56,4 +60,20 @@ export function Restore(arg1) {
 
 export function RevealBackupDir() {
   return window['go']['main']['App']['RevealBackupDir']();
+}
+
+export function SetDevBaseURL(arg1) {
+  return window['go']['main']['App']['SetDevBaseURL'](arg1);
+}
+
+export function SetDevMode(arg1) {
+  return window['go']['main']['App']['SetDevMode'](arg1);
+}
+
+export function TestGateway() {
+  return window['go']['main']['App']['TestGateway']();
+}
+
+export function ToggleDevModeFromMenu() {
+  return window['go']['main']['App']['ToggleDevModeFromMenu']();
 }

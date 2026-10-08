@@ -99,6 +99,39 @@ Undo a window session from the app's Undo button, or with: brewkeg restore
 //
 // The application menu is ours, because the reset lives there and the stock one
 // has nowhere to put it.
+// ToggleDevModeFromMenu is the ⇧⌘D item. Turning developer mode ON is where the
+// caution belongs: the next switch the user flips writes the custom gateway URL
+// into their real config files, and "I forgot I was on staging" is the kind of
+// mistake that costs someone an afternoon. Turning it off just goes back.
+func (a *App) ToggleDevModeFromMenu() {
+	if brewkeg.DevModeOn() {
+		if err := brewkeg.SetDevMode(false); err != nil {
+			_, _ = a.info("Could not turn developer mode off: "+err.Error(), "Developer Mode")
+			return
+		}
+		a.emitDevChanged()
+		return
+	}
+	s := brewkeg.ReadDevSettings()
+	if s.BaseURL == "" {
+		// Nothing to turn on yet — send them to the window, which is the only
+		// place a URL can be typed.
+		a.emitDevChanged()
+		_, _ = a.info("Enter a gateway URL in the window to turn developer mode on.", "Developer Mode")
+		return
+	}
+	if !a.ask("Turn on developer mode?",
+		fmt.Sprintf("Brewkeg Gateway will talk to %s instead of brewkeg.dev.\n\nThe next switch you flip writes that URL into your tool configs, and they will keep using it until you turn this off or reset.\n\n%s", s.BaseURL, brewkeg.DevSettingsPath()),
+		"Turn On", "Cancel") {
+		return
+	}
+	if err := brewkeg.SetDevMode(true); err != nil {
+		_, _ = a.info("Could not turn developer mode on: "+err.Error(), "Developer Mode")
+		return
+	}
+	a.emitDevChanged()
+}
+
 func appMenu(a *App) *menu.Menu {
 	m := menu.NewMenu()
 
@@ -110,6 +143,13 @@ func appMenu(a *App) *menu.Menu {
 	app.AddText("Get an API Key…", nil, func(_ *menu.CallbackData) { a.OpenDashboard() })
 	app.AddText("Check for Updates…", keys.Combo("u", keys.CmdOrCtrlKey, keys.ShiftKey),
 		func(_ *menu.CallbackData) { a.CheckForUpdateFromMenu() })
+	app.AddSeparator()
+	// Developer mode sits above Reset, not below it, because it changes what
+	// Reset would clean up. Repointed at a staging gateway, a reset has to evict
+	// the staging URL — and a user who cannot see the override will not know
+	// which machine they are on at all.
+	app.AddCheckbox("Developer Mode", brewkeg.DevModeOn(), keys.Combo("d", keys.CmdOrCtrlKey, keys.ShiftKey),
+		func(_ *menu.CallbackData) { a.ToggleDevModeFromMenu() })
 	app.AddSeparator()
 	// The reset. Not a switch, and deliberately not next to one: it forgets the
 	// key as well as the configs, so it asks first and describes what it found.

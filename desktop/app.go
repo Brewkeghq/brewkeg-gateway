@@ -41,6 +41,16 @@ type State struct {
 	// SpecVersion is the client-config version in force. 0 means the built-in
 	// spec, i.e. the server could not be reached or had nothing newer.
 	SpecVersion int `json:"specVersion"`
+	// DevMode is true when the app is pointed somewhere other than
+	// brewkeg.dev. The window shows a banner for it, because the next flip of
+	// a switch writes that URL into the user's real config files.
+	DevMode bool `json:"devMode"`
+	// DevBaseURL is the stored override whether or not it is in force, so
+	// toggling developer mode off and back on does not lose what was typed.
+	DevBaseURL string `json:"devBaseUrl,omitempty"`
+	// DefaultBaseURL is what the app falls back to. Shown next to the override
+	// so it is obvious what turning developer mode off is going back to.
+	DefaultBaseURL string `json:"defaultBaseUrl"`
 }
 
 func (a *App) GetState() State {
@@ -50,6 +60,10 @@ func (a *App) GetState() State {
 		Dashboard: brewkeg.BaseURL() + "/dashboard/keys",
 		Targets:   brewkeg.StatusAll(),
 		Platform:  platform(),
+
+		DevMode:        brewkeg.DevModeOn(),
+		DevBaseURL:     brewkeg.ReadDevSettings().BaseURL,
+		DefaultBaseURL: "https://brewkeg.dev",
 	}
 	if k := brewkeg.StoredKey(); k != "" {
 		st.HasKey = true
@@ -416,4 +430,59 @@ func (a *App) CopyToClipboard(text string) {
 // live network calls, so the code has to be one click away from the window.
 func (a *App) OpenRepo() {
 	runtime.BrowserOpenURL(a.ctx, brewkeg.RepoURL)
+}
+
+// --- Developer mode -------------------------------------------------------
+//
+// These four methods exist so a developer can aim the app at a local or staging
+// gateway from the menu, and so the window never shows one gateway while the
+// app writes another.
+
+// SetDevBaseURL validates and stores the override, and reports the reason it
+// could not. The error text goes straight into the window; "invalid URL" with
+// no explanation is why this is a string and not a bool.
+func (a *App) SetDevBaseURL(raw string) (string, error) {
+	if err := brewkeg.SetDevBaseURL(raw); err != nil {
+		return "", err
+	}
+	a.emitDevChanged()
+	return brewkeg.BaseURL(), nil
+}
+
+// SetDevMode toggles the override without losing the URL, and tells the window
+// what is now in force.
+func (a *App) SetDevMode(on bool) (string, error) {
+	if err := brewkeg.SetDevMode(on); err != nil {
+		return "", err
+	}
+	a.emitDevChanged()
+	return brewkeg.BaseURL(), nil
+}
+
+// ClearDevMode removes developer.json entirely, so a shared machine is not left
+// holding the hostname of an internal gateway.
+func (a *App) ClearDevMode() (string, error) {
+	if err := brewkeg.ClearDevSettings(); err != nil {
+		return "", err
+	}
+	a.emitDevChanged()
+	return brewkeg.BaseURL(), nil
+}
+
+// TestGateway reports whether the URL in force answers /v1/models, and what it
+// says about the key if one is supplied. It writes nothing, so a developer can
+// check an endpoint before pointing the app at it.
+func (a *App) TestGateway() string {
+	url := brewkeg.BaseURL()
+	if _, err := brewkeg.FetchSpec(a.context(), url); err != nil {
+		return "No answer from " + url + " — " + err.Error()
+	}
+	return url + " answered."
+}
+
+// emitDevChanged tells the window the gateway moved. Without it the panel keeps
+// showing the old URL while the next write uses the new one, which is the exact
+// confusion developer mode is supposed to remove.
+func (a *App) emitDevChanged() {
+	runtime.EventsEmit(a.ctx, "dev:changed")
 }

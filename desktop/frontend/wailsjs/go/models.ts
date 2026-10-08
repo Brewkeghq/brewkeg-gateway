@@ -547,6 +547,9 @@ export namespace main {
 	    platform: string;
 	    staleCache?: string;
 	    specVersion: number;
+	    devMode: boolean;
+	    devBaseUrl?: string;
+	    defaultBaseUrl: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new State(source);
@@ -565,6 +568,9 @@ export namespace main {
 	        this.platform = source["platform"];
 	        this.staleCache = source["staleCache"];
 	        this.specVersion = source["specVersion"];
+	        this.devMode = source["devMode"];
+	        this.devBaseUrl = source["devBaseUrl"];
+	        this.defaultBaseUrl = source["defaultBaseUrl"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {

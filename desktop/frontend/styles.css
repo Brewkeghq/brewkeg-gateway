@@ -461,3 +461,50 @@ body.busy .switch { transition: none; }
 @media (prefers-reduced-motion: reduce) {
   * { animation: none !important; transition: none !important; }
 }
+/* --- developer mode -----------------------------------------------------
+   Deliberately the only amber in the window. Every other accent means "this
+   worked"; this one means "you are not talking to production", and a user who
+   has seen it once should recognise it instantly on every later launch. */
+.devbanner {
+  margin: 12px 0 0;
+  padding: 8px 10px;
+  border-radius: var(--radius);
+  background: #fffbeb;
+  border: 1px solid #fcd34d;
+  color: #92400e;
+  font-size: 0.8rem;
+}
+.devbanner::before { content: "⚠ "; }
+
+.devpanel {
+  margin-top: 10px;
+  padding: 12px;
+  border-radius: var(--radius);
+  border: 1px dashed var(--border);
+  background: var(--muted);
+}
+.dev-row { display: flex; gap: 8px; }
+.dev-row input {
+  flex: 1;
+  min-width: 0;
+  font: inherit;
+  font-family: var(--mono);
+  font-size: 0.8rem;
+  padding: 7px 9px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--paper);
+  color: var(--ink);
+}
+.dev-row input:focus-visible {
+  outline: none;
+  border-color: var(--accent-deep);
+  box-shadow: 0 0 0 3px var(--accent-wash);
+}
+.dev-note {
+  margin: 8px 0 0;
+  font-size: 0.75rem;
+  line-height: 1.45;
+  color: var(--muted-foreground);
+}
+.dev-actions { display: flex; gap: 8px; margin-top: 10px; }

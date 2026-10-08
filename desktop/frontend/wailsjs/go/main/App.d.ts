@@ -9,6 +9,8 @@ export function CheckForUpdateFromMenu():Promise<void>;
 
 export function CheckKey(arg1:string):Promise<brewkeg.KeyCheck>;
 
+export function ClearDevMode():Promise<string>;
+
 export function Configure(arg1:string,arg2:Array<string>,arg3:string,arg4:string,arg5:string,arg6:string):Promise<main.ConfigureResult>;
 
 export function CopyToClipboard(arg1:string):Promise<void>;
@@ -30,3 +32,11 @@ export function ResetFromMenu():Promise<void>;
 export function Restore(arg1:string):Promise<string>;
 
 export function RevealBackupDir():Promise<void>;
+
+export function SetDevBaseURL(arg1:string):Promise<string>;
+
+export function SetDevMode(arg1:boolean):Promise<string>;
+
+export function TestGateway():Promise<string>;
+
+export function ToggleDevModeFromMenu():Promise<void>;

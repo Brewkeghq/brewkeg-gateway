@@ -19,8 +19,17 @@ var Version = "0.1.0"
 
 // BaseURL is the brewkeg gateway. Overridable so forks and staging runs work.
 func BaseURL() string {
+	// Precedence, strongest first: the environment (someone launching the app
+	// deliberately for this run), the developer override (set in-app, persists
+	// across launches), production. Every consumer goes through here — the
+	// window's state, the key check, the spec fetch, and the URL written into
+	// the user's configs — so an override cannot half-apply and leave the app
+	// talking to staging while it writes production URLs into a dotfile.
 	if v := os.Getenv("BREWKEG_BASE_URL"); v != "" {
 		return strings.TrimRight(v, "/")
+	}
+	if v := DevBaseURL(); v != "" {
+		return v
 	}
 	return "https://brewkeg.dev"
 }

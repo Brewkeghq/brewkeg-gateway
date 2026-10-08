@@ -17,6 +17,10 @@ const api = real ?? {
   Restore: async () => "~/.claude/settings.json — restored original\n~/.zshrc — removed",
   OpenDashboard: () => {},
   RevealBackupDir: () => {},
+  SetDevBaseURL: async (u) => u,
+  SetDevMode: async (on) => (on ? "http://localhost:3000" : DEMO_STATE.baseUrl),
+  ClearDevMode: async () => DEMO_STATE.baseUrl,
+  TestGateway: async () => DEMO_STATE.baseUrl + " answered.",
 };
 
 const ICONS = {
@@ -33,7 +37,13 @@ const ICONS = {
 
 const DEMO_STATE = {
   version: "0.1.0",
-  baseUrl: "https://brewkeg.dev",
+  // The demo shows developer mode ON, so baseUrl has to be the override. With
+  // them disagreeing, the banner claims a custom gateway while the link points
+  // at production — the review then approves a state the app cannot produce.
+  baseUrl: "http://localhost:3000",
+  devMode: true,
+  devBaseUrl: "http://localhost:3000",
+  defaultBaseUrl: "https://brewkeg.dev",
   maskedKey: "bk_live_****ac41",
   apiKey: "bk_live_demo_9f3ac1c07d2e4b5680ac41",
   targets: [
@@ -82,6 +92,14 @@ async function boot() {
   el("update").addEventListener("click", () => api.OpenUpdate(el("update").dataset.url));
   el("repo").addEventListener("click", () => api.OpenRepo());
   el("copy-restart").addEventListener("click", copyRestart);
+  el("dev-save").addEventListener("click", saveDevURL);
+  el("dev-test").addEventListener("click", testGateway);
+  el("dev-off").addEventListener("click", clearDevMode);
+  // The menu toggles developer mode too, and the window has no other way to
+  // learn about it. Without this the banner and the field go stale while the
+  // next write already uses the new gateway.
+  window.runtime?.EventsOn?.("dev:changed", () => refresh());
+  renderDev();
   el("get-key").title = `Get your API key at ${state.baseUrl}/dashboard/keys`;
   refreshSpec();
   if (state.apiKey) {
@@ -215,6 +233,11 @@ function render() {
     li.appendChild(row);
     list.appendChild(li);
   }
+
+  // Rendered from the same state as the switches, on every redraw. A banner
+  // that lagged one render behind the gateway in force is worse than no
+  // banner: it states a falsehood about the user's own machine.
+  renderDev();
 }
 
 // selected is the whole desired state of the machine: every target that should
@@ -444,6 +467,72 @@ async function undo() {
   } catch (e) {
     say(`Failed: ${e}`, true);
   }
+}
+
+// --- developer mode -------------------------------------------------------
+
+// renderDev draws the banner and the panel from state. The banner is visible
+// whenever the app is NOT on brewkeg.dev, whether or not the panel is open —
+// a developer who closed the panel still needs to see which machine they are
+// on before flipping a switch.
+function renderDev() {
+  if (!state) return;
+  const banner = el("devbanner");
+  if (state.devMode) {
+    banner.hidden = false;
+    banner.textContent = `Developer mode — pointed at ${state.baseUrl}`;
+  } else {
+    banner.hidden = true;
+  }
+
+  // The panel is shown when developer mode is on, or when the menu asked for a
+  // URL to be typed (devMode off but an override remembered).
+  const panel = el("devpanel");
+  panel.hidden = !(state.devMode || !!state.devBaseUrl);
+  if (!panel.hidden) {
+    const input = el("dev-url");
+    if (document.activeElement !== input) input.value = state.devBaseUrl || "";
+    el("dev-default").textContent = state.defaultBaseUrl || "brewkeg.dev";
+  }
+
+  // The key link is the one control that leaves the app. Its label is hardcoded
+  // to brewkeg.dev in the markup, so in developer mode it would send a
+  // developer with a staging key to production to mint a new one — the one
+  // dead end the app exists to remove.
+  const keyLink = el("get-key");
+  const host = (state.baseUrl || "").replace(/^https?:\/\//, "");
+  keyLink.textContent = `${host}/dashboard/keys`;
+  keyLink.title = `Get your API key at ${state.baseUrl}/dashboard/keys`;
+}
+
+async function saveDevURL() {
+  const url = el("dev-url").value.trim();
+  try {
+    const now = await api.SetDevBaseURL(url);
+    say(`Now pointing at ${now}. The next switch you flip writes that URL.`);
+    refresh();
+  } catch (e) {
+    say(String(e?.message ?? e), true);
+  }
+}
+
+async function testGateway() {
+  const note = el("dev-note");
+  note.textContent = "Asking…";
+  try {
+    note.textContent = await api.TestGateway();
+  } catch (e) {
+    note.textContent = `Could not ask: ${e?.message ?? e}`;
+  }
+}
+
+// clearDevMode deletes the settings file, not just the flag: a shared machine
+// should not keep the hostname of an internal gateway on disk.
+async function clearDevMode() {
+  await api.ClearDevMode();
+  el("dev-url").value = "";
+  say("Developer mode off. Back to brewkeg.dev.");
+  refresh();
 }
 
 function say(text, bad) {
