@@ -20,8 +20,10 @@ about what gets written to a config file. `TestHeadlessAndWindowProduceIdentical
 is the guard on that — keep it passing.
 
 The app is **Brewkeg Gateway** in the UI — window title, menu bar, header. The
-bundle and binary stay `gateway`/`gateway.app`: the artifact names and the
-`--apply` flags are part of the shipped contract
+binary and bundle are `brewkeg-gateway` / `brewkeg-gateway.app` (shown as
+**Brewkeg Gateway** by macOS via productName) — every
+shipped name carries "brewkeg", because a client called just "gateway" is
+ambiguous on a machine that also has the gateway's other tools on it
 tile. The binary stays `brewkeg`, because renaming it breaks `install.sh` and
 every existing install.
 
@@ -60,12 +62,12 @@ server file back cannot walk an installed app backwards.
 ```bash
 go vet ./... && go test ./...     # vet + test all three packages
 make build                         # CLI binary for this machine
-make desktop                       # -> desktop/build/bin/gateway.app
+make desktop                       # -> desktop/build/bin/brewkeg-gateway.app
 ```
 
 Build the desktop app with `make desktop`, never with bare `wails build` — the
 Makefile stages `assets/appicon.png` first. If Wails reports success but
-`gateway.app/Contents/MacOS/` is empty, delete `desktop/build/bin` and rebuild;
+`brewkeg-gateway.app/Contents/MacOS/` is empty, delete `desktop/build/bin` and rebuild;
 that race has bitten twice and is not a code fault.
 
 ## Layout

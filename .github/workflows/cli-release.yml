@@ -99,13 +99,13 @@ jobs:
         include:
           - os: macos-latest
             platform: darwin/universal
-            package: desktop/build/bin/gateway.app
+            package: desktop/build/bin/brewkeg-gateway.app
           - os: windows-latest
             platform: windows/amd64
-            package: desktop/build/bin/gateway.exe
+            package: desktop/build/bin/brewkeg-gateway.exe
           - os: ubuntu-latest
             platform: linux/amd64
-            package: desktop/build/bin/gateway
+            package: desktop/build/bin/brewkeg-gateway
     runs-on: ${{ matrix.os }}
     steps:
       # Same `path: cli` reasoning as the job above: the module root is the
@@ -145,17 +145,17 @@ jobs:
       - name: Package (macOS)
         if: runner.os == 'macOS'
         working-directory: cli/desktop/build/bin
-        run: ditto -c -k --keepParent gateway.app "gateway_${GITHUB_REF_NAME}_macos.zip"
+        run: ditto -c -k --keepParent brewkeg-gateway.app "brewkeg-gateway_${GITHUB_REF_NAME}_macos.zip"
 
       - name: Package (Windows)
         if: runner.os == 'Windows'
         working-directory: cli/desktop/build/bin
-        run: 7z a "gateway_${GITHUB_REF_NAME}_windows.zip" gateway.exe
+        run: 7z a "brewkeg-gateway_${GITHUB_REF_NAME}_windows.zip" brewkeg-gateway.exe
 
       - name: Package (Linux)
         if: runner.os == 'Linux'
         working-directory: cli/desktop/build/bin
-        run: tar czf "gateway_${GITHUB_REF_NAME}_linux.tar.gz" gateway
+        run: tar czf "brewkeg-gateway_${GITHUB_REF_NAME}_linux.tar.gz" brewkeg-gateway
 
       - name: Attach to release
         shell: bash
@@ -165,9 +165,9 @@ jobs:
           # the Windows name differently from the one it packaged (`tr -d 'v'`),
           # so it only ever attached by falling back to "newest file in dir".
           case "${{ runner.os }}" in
-            macOS) asset="gateway_${GITHUB_REF_NAME}_macos.zip" ;;
-            Windows) asset="gateway_${GITHUB_REF_NAME}_windows.zip" ;;
-            *) asset="gateway_${GITHUB_REF_NAME}_linux.tar.gz" ;;
+            macOS) asset="brewkeg-gateway_${GITHUB_REF_NAME}_macos.zip" ;;
+            Windows) asset="brewkeg-gateway_${GITHUB_REF_NAME}_windows.zip" ;;
+            *) asset="brewkeg-gateway_${GITHUB_REF_NAME}_linux.tar.gz" ;;
           esac
           if [ ! -f "$asset" ]; then
             echo "expected asset missing: $asset" >&2

@@ -38,7 +38,7 @@ func (a *App) CheckForUpdate() UpdateInfo {
 		return info
 	}
 	req.Header.Set("Accept", "application/vnd.github+json")
-	req.Header.Set("User-Agent", "gateway-desktop")
+	req.Header.Set("User-Agent", "brewkeg-gateway-desktop")
 
 	res, err := http.DefaultClient.Do(req)
 	if err != nil {

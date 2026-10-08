@@ -9,7 +9,7 @@ import (
 	"github.com/brewkeghq/brewkeg-gateway/internal/brewkeg"
 )
 
-// headless is `gateway --apply`: no window, no prompts, everything from
+// headless is `brewkeg-gateway --apply`: no window, no prompts, everything from
 // ~/.brewkeg/config.json.
 //
 // It exists because the window is a fine way to configure one machine and a
@@ -86,7 +86,7 @@ func headless() int {
 		}
 	}
 	fmt.Println("\n  Backup saved:", brewkeg.BackupDir(b.ID))
-	fmt.Println("  Undo with:    gateway --undo")
+	fmt.Println("  Undo with:    brewkeg-gateway --undo")
 	return 0
 }
 

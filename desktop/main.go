@@ -3,7 +3,7 @@
 // Package main is Brewkeg Gateway, the brewkeg desktop app: paste an API key, pick
 // what to turn on, done. It is a thin shell over internal/brewkeg — the same
 // engine the CLI uses, so the two can never disagree about what they write.
-// The binary is `gateway`; the CLI alongside it stays `brewkeg`.
+// The binary is `brewkeg-gateway`; the CLI alongside it stays `brewkeg`.
 package main
 
 import (
@@ -24,7 +24,7 @@ import (
 var assets embed.FS
 
 func main() {
-	// `gateway --apply` is the same engine with no window and no questions:
+	// `brewkeg-gateway --apply` is the same engine with no window and no questions:
 	// it reads ~/.brewkeg/config.json and writes. That exists so provisioning
 	// a machine does not mean clicking through menus, and so the app and the
 	// CLI can never disagree about what they would write.
@@ -74,10 +74,10 @@ func main() {
 func headlessHelp() {
 	fmt.Print(`Brewkeg Gateway — configure your tools to use brewkeg
 
-  gateway                 open the window (normal use)
-  gateway --apply         configure now, no window, from ~/.brewkeg/config.json
-  gateway --undo          restore the latest backup, no window
-  gateway --version       print the version
+  brewkeg-gateway         open the window (normal use)
+  brewkeg-gateway --apply configure now, no window, from ~/.brewkeg/config.json
+  brewkeg-gateway --undo  restore the latest backup, no window
+  brewkeg-gateway --version print the version
 
 The config file lives at ` + brewkeg.UserConfigPath() + `:
 
