@@ -8,8 +8,11 @@ name: cli-release
 on:
   push:
     branches: ['main']
+    # Plain semver, NOT `cli-v1.2.3`. GoReleaser parses the tag itself and
+    # hard-fails with "failed to parse tag as semver" on any prefix — there is
+    # no tag_pattern option to strip one. So the release tag is v0.2.0.
     tags:
-      - 'cli-v*'
+      - 'v*'
   pull_request:
   workflow_dispatch:
 
@@ -53,7 +56,7 @@ jobs:
     # This workflow now also runs on plain branch pushes, which is what makes
     # the gate useful. GoReleaser must not: without this it would cut a release
     # on every commit to main.
-    if: startsWith(github.ref, 'refs/tags/cli-v')
+    if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -89,7 +92,7 @@ jobs:
   # already created.
   desktop:
     needs: cli
-    if: startsWith(github.ref, 'refs/tags/cli-v')
+    if: startsWith(github.ref, 'refs/tags/v')
     strategy:
       fail-fast: false
       matrix:

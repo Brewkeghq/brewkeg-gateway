@@ -25,10 +25,9 @@ esac
 
 say "→ fetching latest brewkeg release for ${os}/${arch}"
 
-# The tag and the version are different strings. Releases are tagged
-# `cli-v0.2.0`, so the download URL needs the FULL tag while the asset name
-# needs only the version — assuming they are the same string is how this
-# installer ends up curling a URL that does not exist.
+# The tag and the version are different strings: the URL needs the FULL tag
+# while the asset name needs only the version. Assuming they are the same is how
+# this installer ends up curling a URL that does not exist.
 tag=$(curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest" \
   | sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n1)
 [ -n "$tag" ] || die "could not read the latest release from GitHub"
