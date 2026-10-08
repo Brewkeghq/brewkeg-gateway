@@ -20,6 +20,12 @@ type Options struct {
 	MainModel   string `json:"mainModel"`
 	SonnetModel string `json:"sonnetModel"`
 	FastModel   string `json:"fastModel"`
+	// CodexModel is what Codex runs. It is NOT MainModel: Codex speaks the
+	// Responses API to an OpenAI-shaped gateway, and a claude-* id there is a
+	// 400. Left unset, Codex falls back to its own default — which is a model
+	// brewkeg does not serve, so every prompt fails until someone edits
+	// config.toml by hand.
+	CodexModel string `json:"codexModel"`
 }
 
 func (o Options) WithDefaults() Options {
@@ -28,6 +34,9 @@ func (o Options) WithDefaults() Options {
 	}
 	if o.MainModel == "" {
 		o.MainModel = "claude-opus-5"
+	}
+	if o.CodexModel == "" {
+		o.CodexModel = "gpt-5.5"
 	}
 	if o.SonnetModel == "" {
 		o.SonnetModel = "claude-sonnet-5"
@@ -181,7 +190,7 @@ func (t specTarget) Apply(b *Backup, o Options) (string, error) {
 		case "shell-block":
 			err = writeShellBlock(path, f.Entries, o)
 		case "toml-provider":
-			err = writeTOMLProvider(path, f.Entries, o, t.spec.Enabled.RootKey, t.spec.Enabled.RootValue)
+			err = writeTOMLProvider(path, f.Entries, o, rootKeysOf(t.spec.Enabled))
 		case "zcode-provider":
 			err = WriteZCodeProvider(path, o)
 		default:
@@ -278,7 +287,7 @@ func writeShellBlock(path string, entries []KVSpec, o Options) error {
 // writeTOMLProvider edits [model_providers.<name>] in place when it already
 // exists, and otherwise drops a marked block at the end. Appending a second
 // table of the same name would be a parse error, so that distinction matters.
-func writeTOMLProvider(path string, entries []KVSpec, o Options, rootKey, rootValue string) error {
+func writeTOMLProvider(path string, entries []KVSpec, o Options, roots []KVSpec) error {
 	table := "model_providers.brewkeg"
 	kv := make([]string, 0, len(entries))
 	for _, e := range entries {
@@ -290,9 +299,21 @@ func writeTOMLProvider(path string, entries []KVSpec, o Options, rootKey, rootVa
 	if !edited {
 		next = ApplyBlock(current, BlockBegin, BlockEnd, "["+table+"]\n"+strings.Join(kv, "\n"))
 	}
-	if rootKey != "" && rootValue != "" {
-		next = SetRootKey(next, rootKey, `"`+rootValue+`"`)
+	// Expand first, then write every root key in ONE call. Calling per key rebuilds
+	// the block each time and only the last key survives.
+	//
+	// No unquote here: a TOML root value keeps its JSON quoting. Detection reads
+	// the file text for `model_provider = "brewkeg"`, so writing it unquoted
+	// makes the target read as not-configured — the write lands and the switch
+	// stays off, and nothing gets evicted later.
+	expanded := make([]KVSpec, 0, len(roots))
+	for _, r := range roots {
+		if r.Name == "" || r.Value == "" {
+			continue
+		}
+		expanded = append(expanded, KVSpec{Name: r.Name, Value: expand(r.Value, o)})
 	}
+	next = SetRootKeys(next, expanded)
 	return WriteFile(path, next)
 }
 
@@ -306,6 +327,18 @@ func unquote(v string) string {
 		}
 	}
 	return v
+}
+
+// rootKeysOf is every root-scope TOML key a target owns: the one that decides
+// whether it is "on" (model_provider), plus the extra keys the tool needs to
+// actually work against brewkeg (model).
+func rootKeysOf(e EnabledSpec) []KVSpec {
+	out := make([]KVSpec, 0, 1+len(e.RootKeys))
+	if e.RootKey != "" && e.RootValue != "" {
+		out = append(out, KVSpec{Name: e.RootKey, Value: `"` + e.RootValue + `"`})
+	}
+	out = append(out, e.RootKeys...)
+	return out
 }
 
 /* ------------------------------------------------------------------ status */

@@ -2,6 +2,8 @@
 
 Point your coding tools at brewkeg. Two binaries, one engine.
 
+<img src="docs/gateway.png" width="420" alt="Gateway: paste a key, flip a switch per tool">
+
 | | Install |
 |---|---|
 | `brewkeg` CLI | `curl -fsSL https://brewkeg.dev/install.sh \| sh` |
@@ -16,6 +18,7 @@ brewkeg status
 brewkeg backups
 brewkeg restore --dry-run
 brewkeg restore
+brewkeg reset                 # disconnect everything, clear caches, forget the key
 ```
 
 ## Desktop
@@ -36,6 +39,10 @@ launching it.
 Existing keys are merged, never replaced. A displaced value is commented out as
 `# brewkeg replaced:`. Everything is backed up to `~/.brewkeg/backups/<id>/`
 before the first write and restores byte-exact.
+
+`brewkeg reset` (or **Gateway → Reset Gateway…**) returns the machine to its
+pre-brewkeg state inside one backup, then forgets the key. The desktop menu asks
+first and lists what it found.
 
 Not supported: [docs/unsupported-targets.md](docs/unsupported-targets.md).
 

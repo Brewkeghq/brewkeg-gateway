@@ -107,12 +107,27 @@ export namespace brewkeg {
 	        this.dirsByOS = source["dirsByOS"];
 	    }
 	}
+	export class KVSpec {
+	    name: string;
+	    value: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new KVSpec(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.name = source["name"];
+	        this.value = source["value"];
+	    }
+	}
 	export class EnabledSpec {
 	    jsonEnvKeys?: string[];
 	    shellBlock?: boolean;
 	    tomlTable?: string;
 	    rootKey?: string;
 	    rootValue?: string;
+	    rootKeys?: KVSpec[];
 	    jsonFileKeys?: string[];
 	    zcodeProvider?: string;
 	    neverDetectable?: boolean;
@@ -128,24 +143,29 @@ export namespace brewkeg {
 	        this.tomlTable = source["tomlTable"];
 	        this.rootKey = source["rootKey"];
 	        this.rootValue = source["rootValue"];
+	        this.rootKeys = this.convertValues(source["rootKeys"], KVSpec);
 	        this.jsonFileKeys = source["jsonFileKeys"];
 	        this.zcodeProvider = source["zcodeProvider"];
 	        this.neverDetectable = source["neverDetectable"];
 	    }
-	}
-	export class KVSpec {
-	    name: string;
-	    value: string;
 	
-	    static createFrom(source: any = {}) {
-	        return new KVSpec(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.name = source["name"];
-	        this.value = source["value"];
-	    }
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
 	}
 	export class FileSpec {
 	    path: string;

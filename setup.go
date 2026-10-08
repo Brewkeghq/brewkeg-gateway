@@ -19,6 +19,7 @@ func runSetup(args []string) int {
 	opts.MainModel = flagValue(args, "--model")
 	opts.SonnetModel = flagValue(args, "--sonnet-model")
 	opts.FastModel = flagValue(args, "--fast-model")
+	opts.CodexModel = flagValue(args, "--codex-model")
 
 	// ~/.brewkeg/config.json is the base; flags and prompts override it. This
 	// is what makes `brewkeg setup --yes` work with no input at all.

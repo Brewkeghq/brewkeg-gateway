@@ -339,3 +339,49 @@ func TestResetClearsPickerAndZCodeRules(t *testing.T) {
 		t.Fatal("reset deleted the user's own zcode provider")
 	}
 }
+
+// Codex ships its own default model and we do not serve it. Pointing Codex at
+// brewkeg without also setting `model` left it asking for "gpt-5.2", which the
+// gateway rejects — so a connected Codex failed on its first prompt with
+// "model_not_supported", and the picker looked broken rather than unwired.
+//
+// Two things have to hold: the model we write must be one brewkeg serves, and
+// the user's own value must come back byte-exact on eviction.
+func TestCodexGetsAModelWeServe(t *testing.T) {
+	withTempHome(t)
+
+	path := filepath.Join(Home(), ".codex", "config.toml")
+	orig := "model = \"gpt-5.2\"\nmodel_provider = \"openai\"\n\n[tui]\ntheme = \"dark\"\n"
+	writeFile(t, path, orig)
+
+	if _, _, err := ApplyWithSpec(DefaultSpec(), []string{"codex"}, Options{APIKey: "bk_live_K"}); err != nil {
+		t.Fatal(err)
+	}
+	on := readFile(t, path)
+
+	// Both root keys must be live together. SetRootKey rebuilds its block on
+	// every call, so writing one key per call silently drops the other — Codex
+	// gets `model` and loses `model_provider`, which is not a working setup.
+	if !strings.Contains(on, `model_provider = "brewkeg"`) {
+		t.Fatalf("model_provider missing after writing model:\n%s", on)
+	}
+	if !strings.Contains(on, "# brewkeg replaced: model = \"gpt-5.2\"") {
+		t.Fatalf("the user's own model was not preserved:\n%s", on)
+	}
+	if n := strings.Count(on, RootBlockBegin); n != 1 {
+		t.Fatalf("expected exactly one root block, got %d:\n%s", n, on)
+	}
+
+	// Unquoted, the detection that decides "is Codex on us?" cannot match it.
+	want := "gpt-" + "5.5"
+	if !strings.Contains(on, `model = "`+want+`"`) {
+		t.Fatalf("model was not set to a served id (%s):\n%s", want, on)
+	}
+
+	if _, _, err := ApplyWithSpec(DefaultSpec(), nil, Options{}); err != nil {
+		t.Fatal(err)
+	}
+	if got := readFile(t, path); got != orig {
+		t.Fatalf("round trip is not byte-exact\n--- got ---\n%s\n--- want ---\n%s", got, orig)
+	}
+}

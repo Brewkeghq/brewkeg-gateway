@@ -54,8 +54,42 @@ func HasBlock(content string) bool { return anyBlockRe.MatchString(content) }
 // would ignore it. So the line goes into the root region, and any pre-existing
 // value is commented out — writing both would be a duplicate-key parse error.
 func SetRootKey(content, key, value string) string {
-	re := regexp.MustCompile(`(?m)^\s*` + regexp.QuoteMeta(key) + `\s*=`)
-	kv := key + " = " + value
+	return SetRootKeys(content, []KVSpec{{Name: key, Value: value}})
+}
+
+// SetRootKeys sets every top-level key a tool owns, inside ONE marked block.
+//
+// It is a list rather than a single key because the block is rebuilt from
+// scratch on every call. Calling SetRootKey once per key therefore kept only
+// the last one: Codex got `model` but silently lost `model_provider`, and
+// nothing said so. The block is ours, so all of it is written, commented-over
+// and removed together.
+func SetRootKeys(content string, kvs []KVSpec) string {
+	var names, kvLines []string
+	for _, k := range kvs {
+		if k.Name == "" || k.Value == "" {
+			continue
+		}
+		names = append(names, regexp.QuoteMeta(k.Name))
+		kvLines = append(kvLines, k.Name+" = "+k.Value)
+	}
+	if len(names) == 0 {
+		return content
+	}
+	// One regex covering every key, so a live assignment of any of them is
+	// commented out in a single pass instead of one pass per key.
+	re := regexp.MustCompile(`(?m)^\s*(` + strings.Join(names, "|") + `)\s*=`)
+	// writesNow reports whether a commented-out assignment records a value this
+	// run is writing. Such a copy preserves nothing — it is our own residue —
+	// so it goes.
+	writesNow := func(v string) bool {
+		for _, l := range kvLines {
+			if strings.TrimSpace(strings.SplitN(l, "=", 2)[1]) == v {
+				return true
+			}
+		}
+		return false
+	}
 
 	// Start from a clean slate. A previous run of an older build may have left
 	// half a block behind — an end marker with no begin marker, or the value we
@@ -63,15 +97,15 @@ func SetRootKey(content, key, value string) string {
 	// how twelve copies of "# brewkeg replaced:" ended up in one file. Every
 	// trace of us in the root region goes first; then exactly one block goes
 	// back in.
-	lines := strings.Split(content, "\n")
-	firstTable := len(lines)
-	for i, l := range lines {
+	fileLines := strings.Split(content, "\n")
+	firstTable := len(fileLines)
+	for i, l := range fileLines {
 		if strings.HasPrefix(strings.TrimSpace(l), "[") {
 			firstTable = i
 			break
 		}
 	}
-	head, tail := lines[:firstTable], lines[firstTable:]
+	head, tail := fileLines[:firstTable], fileLines[firstTable:]
 
 	// Drop the whole marked block, markers *and* the line between them.
 	// Removing only the markers leaves our own assignment behind as an
@@ -97,7 +131,7 @@ func SetRootKey(content, key, value string) string {
 		// this function is fixing — it preserves nothing, so it goes.
 		if t := strings.TrimSpace(l); strings.HasPrefix(t, replacedPrefix) {
 			rest := strings.TrimSpace(strings.TrimPrefix(t, replacedPrefix))
-			if eq := strings.TrimSpace(strings.SplitN(rest, "=", 2)[1]); eq == value {
+			if eq := strings.TrimSpace(strings.SplitN(rest, "=", 2)[1]); writesNow(eq) {
 				continue
 			}
 		}
@@ -126,7 +160,8 @@ func SetRootKey(content, key, value string) string {
 		}
 	}
 
-	block := []string{RootBlockBegin, kv, RootBlockEnd}
+	block := append([]string{RootBlockBegin}, kvLines...)
+	block = append(block, RootBlockEnd)
 
 	// Place it after the last non-empty root line, so the block sits at the end
 	// of the root region and cannot drift above the user's own keys.

@@ -81,7 +81,7 @@ func removeShellBlock(path string) (bool, error) {
 // removeTOMLProvider takes brewkeg back out of a config.toml: our marked block,
 // the [model_providers.brewkeg] table, and the root key that selected it — plus
 // the foreign value we commented out on the way in, which is put back.
-func removeTOMLProvider(path, rootKey string) (bool, error) {
+func removeTOMLProvider(path string, roots []KVSpec) (bool, error) {
 	current := ReadFile(path)
 	if strings.TrimSpace(current) == "" {
 		return false, nil
@@ -89,9 +89,12 @@ func removeTOMLProvider(path, rootKey string) (bool, error) {
 
 	next, hadBlock := StripBlock(current)
 	next, hadTable := removeTable(next, "model_providers.brewkeg")
-	if rootKey != "" {
+	for _, r := range roots {
+		if r.Name == "" {
+			continue
+		}
 		var hadRoot bool
-		next, hadRoot = restoreRootKey(next, rootKey)
+		next, hadRoot = restoreRootKey(next, r.Name)
 		hadBlock = hadBlock || hadRoot
 	}
 	if !hadBlock && !hadTable {
@@ -250,7 +253,7 @@ func removeTarget(t Target, s Spec, b *Backup) (string, error) {
 		case "shell-block":
 			changed, err = removeShellBlock(path)
 		case "toml-provider":
-			changed, err = removeTOMLProvider(path, st.spec.Enabled.RootKey)
+			changed, err = removeTOMLProvider(path, rootKeysOf(st.spec.Enabled))
 		case "zcode-provider":
 			changed, err = RemoveZCodeProvider(path)
 		default:

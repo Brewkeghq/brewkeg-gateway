@@ -27,6 +27,7 @@ Options:
   --model ID           main model for Claude Code (default claude-opus-5)
   --sonnet-model ID    middle of the lineup (default claude-sonnet-5)
   --fast-model ID      small/fast model (default claude-haiku-4-5)
+  --codex-model ID     model Codex runs (default gpt-5.5)
   --backup ID          which backup to restore
   --dry-run            show what restore would do, change nothing
   --skip-check         write config without testing the key first

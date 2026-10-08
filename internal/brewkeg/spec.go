@@ -98,6 +98,16 @@ type EnabledSpec struct {
 	TomlTable string `json:"tomlTable,omitempty"`
 	RootKey   string `json:"rootKey,omitempty"`
 	RootValue string `json:"rootValue,omitempty"`
+	// RootKeys are further root-scope TOML keys this tool needs, written and
+	// evicted by the same rules as RootKey: a pre-existing value is commented
+	// out as `# brewkeg replaced:`, never deleted.
+	//
+	// Codex is why this is a list. Pointing it at brewkeg is not only
+	// `model_provider = "brewkeg"` — Codex also has to be told WHICH model to
+	// run, and its own default (`gpt-5.2`) is not a model brewkeg serves, so
+	// every prompt 400s with "model_not_supported". One root key could not fix
+	// both.
+	RootKeys []KVSpec `json:"rootKeys,omitempty"`
 	// JSONFileKeys: the tool is on when a top-level JSON config has any of
 	// these keys with a non-empty value. Used where the config is not an env
 	// bag, e.g. Claude Desktop's inference settings.
@@ -147,6 +157,7 @@ const (
 	phMainModel   = "{{mainModel}}"
 	phSonnetModel = "{{sonnetModel}}"
 	phFastModel   = "{{fastModel}}"
+	phCodexModel  = "{{codexModel}}"
 )
 
 func expand(v string, o Options) string {
@@ -157,6 +168,7 @@ func expand(v string, o Options) string {
 		phMainModel, o.MainModel,
 		phSonnetModel, o.SonnetModel,
 		phFastModel, o.FastModel,
+		phCodexModel, o.CodexModel,
 	).Replace(v)
 }
 
@@ -193,6 +205,9 @@ func DefaultSpec() Spec {
 				Enabled: EnabledSpec{
 					TomlTable: "model_providers.brewkeg",
 					RootKey:   "model_provider", RootValue: "brewkeg",
+					// Codex otherwise keeps its own default model, which is not
+					// one we serve, and every prompt 400s.
+					RootKeys: []KVSpec{{Name: "model", Value: `"` + phCodexModel + `"`}},
 				},
 				Files: []FileSpec{
 					{Path: ".codex/config.toml", Kind: "toml-provider", Entries: []KVSpec{

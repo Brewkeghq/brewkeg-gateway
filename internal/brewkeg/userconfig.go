@@ -26,6 +26,7 @@ type UserConfig struct {
 	// the engine fills in the default rather than dropping the family.
 	SonnetModel string `json:"sonnetModel,omitempty"`
 	FastModel   string `json:"fastModel,omitempty"`
+	CodexModel  string `json:"codexModel,omitempty"`
 }
 
 // LoadUserConfig reads the config file. A missing or unreadable file is not an
@@ -77,6 +78,9 @@ func (c UserConfig) Resolve(o Options) Options {
 	}
 	if out.FastModel == "" {
 		out.FastModel = c.FastModel
+	}
+	if out.CodexModel == "" {
+		out.CodexModel = c.CodexModel
 	}
 	return out.WithDefaults()
 }
