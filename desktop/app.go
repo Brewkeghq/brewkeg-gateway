@@ -321,11 +321,11 @@ func (a *App) ResetFromMenu() {
 	if plan.BackupID != "" {
 		lines = append(lines, "\nA backup is saved first, so this can be undone.")
 	}
-	if !a.ask("Reset Gateway?", strings.Join(lines, "\n"), "Reset", "Cancel") {
+	if !a.ask("Reset Brewkeg Gateway?", strings.Join(lines, "\n"), "Reset", "Cancel") {
 		return
 	}
 	res := a.Reset(false)
-	_, _ = a.info(res.Message, "Reset Gateway")
+	_, _ = a.info(res.Message, "Reset Brewkeg Gateway")
 }
 
 // ask and info are thin wrappers so every dialog in the app goes through one
@@ -381,10 +381,10 @@ func (a *App) undoFromMenu() {
 func (a *App) CheckForUpdateFromMenu() {
 	info := a.CheckForUpdate()
 	if !info.Available {
-		_, _ = a.info("Gateway "+info.Current+" is the latest version.", "Check for Updates")
+		_, _ = a.info("Brewkeg Gateway "+info.Current+" is the latest version.", "Check for Updates")
 		return
 	}
-	msg := "Gateway " + info.Latest + " is available.\n\nYou are on " + info.Current + "."
+	msg := "Brewkeg Gateway " + info.Latest + " is available.\n\nYou are on " + info.Current + "."
 	if info.Notes != "" {
 		msg += "\n\n" + info.Notes
 	}

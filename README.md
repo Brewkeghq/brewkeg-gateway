@@ -1,13 +1,13 @@
-# brewkeg gateway
+# Brewkeg Gateway
 
 Point your coding tools at brewkeg. Two binaries, one engine.
 
-<img src="docs/gateway.png" width="420" alt="Gateway: paste a key, flip a switch per tool">
+<img src="docs/gateway.png" width="420" alt="Brewkeg Gateway: paste a key, flip a switch per tool">
 
 | | Install |
 |---|---|
 | `brewkeg` CLI | `curl -fsSL https://brewkeg.dev/install.sh \| sh` |
-| Gateway (desktop) | download from a release |
+| Brewkeg Gateway (desktop app) | download from a release |
 
 ## CLI
 
@@ -21,7 +21,7 @@ brewkeg restore
 brewkeg reset                 # disconnect everything, clear caches, forget the key
 ```
 
-## Desktop
+## Desktop app (Brewkeg Gateway)
 
 Open, paste your key, flip a switch. Every toggle backs up first and can be
 undone. Open `desktop/frontend/index.html?demo=1` to see the UI without
@@ -40,7 +40,7 @@ Existing keys are merged, never replaced. A displaced value is commented out as
 `# brewkeg replaced:`. Everything is backed up to `~/.brewkeg/backups/<id>/`
 before the first write and restores byte-exact.
 
-`brewkeg reset` (or **Gateway → Reset Gateway…**) returns the machine to its
+`brewkeg reset` (or **Brewkeg Gateway → Reset Brewkeg Gateway…**) returns the machine to its
 pre-brewkeg state inside one backup, then forgets the key. The desktop menu asks
 first and lists what it found.
 

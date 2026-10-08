@@ -19,7 +19,9 @@ They share `internal/brewkeg/`, so the window and the script can never disagree
 about what gets written to a config file. `TestHeadlessAndWindowProduceIdenticalConfig`
 is the guard on that — keep it passing.
 
-The app is **Gateway**, not "brewkeg gateway": a 600px title bar and a Dock
+The app is **Brewkeg Gateway** in the UI — window title, menu bar, header. The
+bundle and binary stay `gateway`/`gateway.app`: the artifact names and the
+`--apply` flags are part of the shipped contract
 tile. The binary stays `brewkeg`, because renaming it breaks `install.sh` and
 every existing install.
 
