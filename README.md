@@ -7,7 +7,42 @@ Point your coding tools at brewkeg. Two binaries, one engine.
 | | Install |
 |---|---|
 | `brewkeg` CLI | `curl -fsSL https://brewkeg.dev/install.sh \| sh` |
-| Brewkeg Gateway (desktop app) | download from a release |
+| Brewkeg Gateway (desktop app) | see below |
+
+## Desktop app (Brewkeg Gateway)
+
+**Do not download the `.zip` from a browser.** A browser stamps
+`com.apple.quarantine` / `Zone.Identifier` on everything it fetches, and
+Gatekeeper then refuses to open the app (*"Apple could not verify … is free of
+malware"*) or SmartScreen does the same on Windows (*"Windows protected your
+PC"*). `curl` sets neither flag, so an app fetched by the installer opens with
+no dialog and no certificate.
+
+```bash
+curl -fsSL https://brewkeg.dev/install-app.sh | sh     # macOS + Linux
+```
+
+```powershell
+irm https://brewkeg.dev/install-app.ps1 | iex          # Windows
+```
+
+It downloads the latest release for your OS, replaces any existing copy,
+installs to `/Applications` (macOS) or `%LOCALAPPDATA%\Programs` (Windows),
+clears the quarantine flag and starts the app.
+
+The Windows install is per-user on purpose: it needs no admin rights, because an
+app that edits your dotfiles has no business demanding elevation to paste an API
+key.
+
+Prefer a GUI? Download the zip, then run this once:
+
+```bash
+xattr -d com.apple.quarantine /Applications/brewkeg-gateway.app
+```
+
+Open, paste your key, flip a switch. Every toggle backs up first and can be
+undone. Open `desktop/frontend/index.html?demo=1` to see the UI without
+launching it.
 
 ## CLI
 
@@ -20,12 +55,6 @@ brewkeg restore --dry-run
 brewkeg restore
 brewkeg reset                 # disconnect everything, clear caches, forget the key
 ```
-
-## Desktop app (Brewkeg Gateway)
-
-Open, paste your key, flip a switch. Every toggle backs up first and can be
-undone. Open `desktop/frontend/index.html?demo=1` to see the UI without
-launching it.
 
 ## What it writes
 
