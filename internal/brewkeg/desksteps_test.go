@@ -7,9 +7,13 @@ import (
 	"testing"
 )
 
+// devSettingsPath resolves through the SAME function the code reads from.
+// Hardcoding the macOS path here made every Developer Mode test pass on a Mac
+// and fail on the Linux runner — the test proved nothing about the resolver,
+// only that one platform's layout happened to line up.
 func devSettingsPath(t *testing.T) string {
 	t.Helper()
-	return filepath.Join(os.Getenv("HOME"), "Library", "Application Support", "Claude-3p", "developer_settings.json")
+	return ClaudeDesktopDeveloperSettings()
 }
 
 func writeDevSettings(t *testing.T, body string) {

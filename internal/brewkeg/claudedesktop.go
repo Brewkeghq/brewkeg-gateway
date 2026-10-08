@@ -40,6 +40,33 @@ func ClaudeDesktopSupportDir() string {
 	}
 }
 
+// ClaudeDesktopUserDataDir is the app's ordinary userData directory — the one
+// WITHOUT the -3p suffix.
+//
+// Not every path in this app follows one rule. The third-party config library
+// goes through the `+ "-3p"` helper, but developer_settings.json is resolved
+// by the app with a plain `path.join(app.getPath("userData"), …)`, so it
+// lives beside it, not inside it. Reading Developer Mode out of
+// ClaudeDesktopSupportDir() therefore looks at a file the app never writes:
+// the check answers "off" on every machine, so the one step we cannot do for
+// the user is always printed, forever.
+func ClaudeDesktopUserDataDir() string {
+	switch runtime.GOOS {
+	case "windows":
+		return HomeJoin("AppData", "Roaming", "Claude")
+	case "linux":
+		return HomeJoin(".config", "Claude")
+	default:
+		return HomeJoin("Library", "Application Support", "Claude")
+	}
+}
+
+// ClaudeDesktopDeveloperSettings is the exact file both the app and the spec
+// write, resolved from one place so the two cannot drift again.
+func ClaudeDesktopDeveloperSettings() string {
+	return filepath.Join(ClaudeDesktopUserDataDir(), "developer_settings.json")
+}
+
 // ClaudeDesktopConfigDir is where the saved inference configurations live.
 func ClaudeDesktopConfigDir() string {
 	return filepath.Join(ClaudeDesktopSupportDir(), "configLibrary")
@@ -60,7 +87,7 @@ func ClaudeDesktopConfigDir() string {
 // printing one redundant line costs the user a glance, while wrongly skipping
 // it sends them to a menu that is not there.
 func ClaudeDesktopDeveloperModeOn() bool {
-	raw := ReadFile(filepath.Join(ClaudeDesktopSupportDir(), "developer_settings.json"))
+	raw := ReadFile(ClaudeDesktopDeveloperSettings())
 	if strings.TrimSpace(raw) == "" {
 		return false
 	}

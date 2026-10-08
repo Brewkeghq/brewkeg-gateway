@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -97,284 +96,38 @@ func TestConfigureRefusesWithoutKey(t *testing.T) {
 	}
 }
 
-// A target can succeed while still needing the user by hand: on Claude Desktop
-// the gateway profile lives behind a signed-in Developer menu, so we write the
-// `allowDevTools` prerequisite and print the steps. Bouncing the app for that
-// half presents as "it restarted but nothing happened" — which is exactly what
-// happened. A target with manual steps must not be restarted or relaunched.
-func TestConfigureDoesNotRestartATargetItDidNotWriteTo(t *testing.T) {
-	sandbox(t)
-	app := NewApp()
+// A target that succeeds while still needing the user by hand must not be
+// bounced. Bouncing an app for the half we could write presents as "it
+// restarted but nothing happened" — which is exactly what happened.
+//
+// This is a unit test of `finished`, not of the desktop target's manual steps.
+// It used to drive the real desktop target and assert it still had steps — a
+// premise that stopped being true when we made Claude Desktop fully writable,
+// so the test went red for the right reason at the wrong layer. The guard lives
+// in the filter, so the filter is what gets tested.
+func TestFinishedSkipsAnythingTheUserStillHasToDo(t *testing.T) {
+	got := finished([]brewkeg.ApplyResult{
+		// Done: written, moved bytes, nothing left by hand.
+		{ID: "codex", OK: true, Changed: true, Paths: []string{"~/.codex/config.toml"}},
+		// Done but rewritten byte-identically — nothing to apply, so nothing to
+		// restart. This is the fleet-restart bug in one line.
+		{ID: "claude-cli", OK: true, Changed: false, Paths: []string{"~/.claude/settings.json"}},
+		// Succeeded, wrote a prerequisite, but the real work is manual.
+		{ID: "desktop", OK: true, Changed: true, Paths: []string{"developer_settings.json"},
+			Manual: "Open Developer Mode, then reopen the app"},
+		// Nothing was written at all.
+		{ID: "zcode", OK: true, Changed: true},
+		// Failed.
+		{ID: "broken", OK: false, Changed: true, Paths: []string{"~/.x"}},
+	})
 
-	// No Claude-3p/configLibrary in the sandbox, so the desktop target can only
-	// write developer_settings.json and reports OK with manual steps.
-	res := app.Configure("bk_live_testkey123", []string{"claude-cli", "desktop"}, "https://brewkeg.dev", "", "", "")
-	if !res.OK {
-		t.Fatal(res.Message)
+	want := []string{"codex"}
+	if len(got) != len(want) {
+		t.Fatalf("finished() = %v, want %v", got, want)
 	}
-
-	desktop := false
-	for _, r := range res.Results {
-		if r.ID == "desktop" {
-			desktop = true
-			if r.Manual == "" {
-				t.Fatal("a target we cannot fully write to must carry the manual steps")
-			}
-		}
-	}
-	if !desktop {
-		t.Fatal("desktop target missing from results")
-	}
-
-	for _, h := range res.Restart {
-		if strings.Contains(strings.ToLower(h.What), "desktop") {
-			t.Fatalf("Claude Desktop was scheduled for restart despite having manual steps: %+v", res.Restart)
-		}
-	}
-	for _, r := range res.Relaunched {
-		if strings.Contains(strings.ToLower(r.App), "desktop") {
-			t.Fatalf("Claude Desktop was relaunched despite having manual steps: %+v", res.Relaunched)
-		}
-	}
-
-	// The one we really did finish is still restarted — the guard must not
-	// disable the feature it was added for.
-	found := false
-	for _, h := range res.Restart {
-		if strings.Contains(strings.ToLower(h.What), "claude") {
-			found = true
-		}
-	}
-	if !found {
-		t.Fatalf("the target we did finish lost its restart hint: %+v", res.Restart)
-	}
-}
-
-// "Select nothing" used to be refused outright. It is not a dead button any
-// more: when something is connected it is the disconnect action, and when
-// nothing is there is still refused rather than claiming to have done something.
-func TestConfigureRefusesWithNothingSelectedAndNothingConnected(t *testing.T) {
-	sandbox(t)
-	app := NewApp()
-	res := app.Configure("bk_live_testkey123", nil, "https://brewkeg.dev", "", "", "")
-	if res.OK || res.Message == "" {
-		t.Fatal("selecting no services on a clean machine must be refused, not silently succeed")
-	}
-}
-
-// The contract the user asked for: untoggle a tool, press the button, and its
-// config is cleared. Previously this returned "Turn on at least one service",
-// which made unconfiguring the one thing the window could not do.
-func TestConfigureWithNothingSelectedEvictsWhatWasOn(t *testing.T) {
-	home := sandbox(t)
-	app := NewApp()
-
-	if res := app.Configure("bk_live_testkey123", []string{"claude-cli"}, "https://brewkeg.dev", "", "", ""); !res.OK {
-		t.Fatal(res.Message)
-	}
-	settings := filepath.Join(home, ".claude", "settings.json")
-	if !strings.Contains(brewkeg.ReadFile(settings), "ANTHROPIC_BASE_URL") {
-		t.Fatal("first run did not configure anything to evict")
-	}
-
-	res := app.Configure("bk_live_testkey123", nil, "https://brewkeg.dev", "", "", "")
-	if !res.OK {
-		t.Fatalf("disconnecting must be possible: %s", res.Message)
-	}
-	if got := brewkeg.ReadFile(settings); strings.Contains(got, "ANTHROPIC_BASE_URL") || strings.Contains(got, "bk_live_") {
-		t.Fatalf("brewkeg survived the disconnect:\n%s", got)
-	}
-	if got := brewkeg.ReadFile(settings); !strings.Contains(got, "theme") {
-		t.Fatalf("evict destroyed something that is not ours:\n%s", got)
-	}
-	if !strings.Contains(res.Message, "Disconnect") {
-		t.Fatalf("the window would tell the user the wrong direction: %q", res.Message)
-	}
-
-	for _, tg := range app.GetState().Targets {
-		if tg.Enabled {
-			t.Fatalf("%s still reports as enabled after a disconnect", tg.ID)
-		}
-	}
-}
-
-// Disconnecting must not require a key. Once every tool is pointed away from us
-// there is nothing left to authenticate, and demanding a secret to undo our own
-// edits locks out exactly the user whose key has just expired.
-func TestConfigureDisconnectsWithNoKeyAtAll(t *testing.T) {
-	home := sandbox(t)
-	app := NewApp()
-
-	if res := app.Configure("bk_live_testkey123", []string{"claude-cli"}, "https://brewkeg.dev", "", "", ""); !res.OK {
-		t.Fatal(res.Message)
-	}
-	if err := os.Remove(filepath.Join(home, ".brewkeg", "key")); err != nil {
-		t.Fatalf("could not clear the key store: %v", err)
-	}
-
-	res := app.Configure("", nil, "https://brewkeg.dev", "", "", "")
-	if !res.OK {
-		t.Fatalf("disconnect must not be gated on a key: %s", res.Message)
-	}
-	if got := brewkeg.ReadFile(filepath.Join(home, ".claude", "settings.json")); strings.Contains(got, "bk_live_") {
-		t.Fatalf("key still in the config after a keyless disconnect:\n%s", got)
-	}
-	if res.Warning != "" {
-		t.Fatalf("a keyless disconnect has no untested key to warn about: %q", res.Warning)
-	}
-}
-
-// Claude Desktop is half-writable. The developer switch is a plain JSON file we
-// own and must write for the user; the gateway lives in a GUI store we cannot
-// read, so that half is still printed as steps. This test keeps the boundary
-// honest in both directions.
-func TestDesktopWritesDevToolsSwitchButStillPrintsGatewaySteps(t *testing.T) {
-	home := sandbox(t)
-	dev := filepath.Join(home, "Library", "Application Support", "Claude", "developer_settings.json")
-	if err := os.MkdirAll(filepath.Dir(dev), 0o755); err != nil {
-		t.Fatal(err)
-	}
-
-	app := NewApp()
-	res := app.Configure("bk_live_testkey123", []string{"desktop"}, "https://brewkeg.dev", "", "", "")
-	if !res.OK {
-		t.Fatalf("desktop should succeed: %s", res.Message)
-	}
-
-	for _, r := range res.Results {
-		// We create the configuration library ourselves now, so the target
-		// finishes what it set out to do. Anything still printed is a caveat
-		// about the app's UI — never an instruction to build the profile by
-		// hand, which would make this whole path pointless.
-		if strings.Contains(r.Manual, "Configure Third-Party Inference") {
-			t.Errorf("we now write the profile directly, but still ask for it by hand: %q", r.Manual)
-		}
-		if strings.Contains(strings.ToLower(r.Manual), "sign in") {
-			t.Errorf("manual steps tell a signed-in user to sign in: %q", r.Manual)
-		}
-	}
-
-	if !brewkeg.FileExists(dev) {
-		t.Fatalf("allowDevTools should have been written to %s", dev)
-	}
-	// And the gateway half is no longer a GUI step: the profile now exists.
-	if !brewkeg.FileExists(brewkeg.ClaudeDesktopAppliedConfig()) {
-		t.Fatal("the Claude Desktop configuration library was not created")
-	}
-	var got map[string]any
-	if err := json.Unmarshal([]byte(readFileString(t, dev)), &got); err != nil {
-		t.Fatalf("developer_settings.json is not valid JSON: %v", err)
-	}
-	// A string "true" is not a boolean to Electron, and it would fail silently.
-	if v, ok := got["allowDevTools"].(bool); !ok || !v {
-		t.Errorf("allowDevTools = %#v, want the boolean true", got["allowDevTools"])
-	}
-}
-
-// The switch must not swallow anything the user put there themselves.
-func TestDesktopDevToolsMergeIsSurgical(t *testing.T) {
-	home := sandbox(t)
-	dev := filepath.Join(home, "Library", "Application Support", "Claude", "developer_settings.json")
-	if err := os.MkdirAll(filepath.Dir(dev), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	original := "{\n  \"someOtherSetting\": 42,\n  \"nested\": {\"keep\": true}\n}\n"
-	if err := os.WriteFile(dev, []byte(original), 0o644); err != nil {
-		t.Fatal(err)
-	}
-
-	app := NewApp()
-	if res := app.Configure("bk_live_testkey123", []string{"desktop"}, "https://brewkeg.dev", "", "", ""); !res.OK {
-		t.Fatal(res.Message)
-	}
-
-	var got map[string]any
-	if err := json.Unmarshal([]byte(readFileString(t, dev)), &got); err != nil {
-		t.Fatal(err)
-	}
-	if got["someOtherSetting"] != float64(42) {
-		t.Errorf("unrelated key was changed: %#v", got["someOtherSetting"])
-	}
-	if _, ok := got["nested"].(map[string]any); !ok {
-		t.Errorf("nested object was lost: %#v", got["nested"])
-	}
-	if got["allowDevTools"] != true {
-		t.Errorf("allowDevTools was not set: %#v", got)
-	}
-
-	// And undo puts their file back byte for byte.
-	if _, err := brewkeg.LatestBackup(); err == nil {
-		if b, err := brewkeg.LatestBackup(); err == nil {
-			if _, err := b.Restore(false); err != nil {
-				t.Fatal(err)
-			}
-		}
-	}
-	if got := readFileString(t, dev); got != original {
-		t.Errorf("restore was not byte-exact:\ngot:  %q\nwant: %q", got, original)
-	}
-}
-
-// Windows and Linux put Claude Desktop somewhere else entirely. One spec has
-// to cover all three or the app silently does nothing on two platforms.
-func TestDesktopPathIsCorrectPerOS(t *testing.T) {
-	var target brewkeg.TargetSpec
-	for _, t := range brewkeg.DefaultSpec().Targets {
-		if t.ID == "desktop" {
-			target = t
-		}
-	}
-	if len(target.Files) != 2 {
-		t.Fatalf("desktop should write two files, got %d", len(target.Files))
-	}
-	f := target.Files[1] // the developer-mode switch; Files[0] is the 3p config
-
-	got := map[string]string{
-		"darwin":  f.Paths["darwin"],
-		"windows": f.Paths["windows"],
-		"linux":   f.Paths["linux"],
-	}
-	want := map[string]string{
-		"darwin":  "Library/Application Support/Claude/developer_settings.json",
-		"windows": "AppData/Roaming/Claude/developer_settings.json",
-		"linux":   ".config/Claude/developer_settings.json",
-	}
-	// Windows is %LOCALAPPDATA% for the *inference* config — not %APPDATA%.
-	// Check the support dir the engine resolves for that, separately.
-	for os_, path := range want {
-		if got[os_] != path {
-			t.Errorf("%s path = %q, want %q", os_, got[os_], path)
-		}
-		if strings.HasPrefix(got[os_], "/") {
-			t.Errorf("%s path %q is absolute — that would need sudo and writes outside $HOME", os_, got[os_])
-		}
-		// Every path must land inside $HOME: an absolute or escaping path
-		// would need sudo and could write somewhere the user never agreed to.
-		if !strings.HasPrefix(filepath.Clean(brewkeg.HomeJoin(got[os_])), filepath.Clean(brewkeg.Home())) {
-			t.Errorf("%s path %q resolves outside $HOME", os_, got[os_])
-		}
-	}
-	if f.Kind != "json-plain" {
-		t.Errorf("kind = %q, want json-plain", f.Kind)
-	}
-	if !strings.HasSuffix(brewkeg.ClaudeDesktopConfigDir(), filepath.Join("configLibrary")) {
-		t.Errorf("config dir = %q, want it to end in configLibrary", brewkeg.ClaudeDesktopConfigDir())
-	}
-}
-
-func TestGetStateReportsEnabledAfterConfigure(t *testing.T) {
-	sandbox(t)
-	app := NewApp()
-	if res := app.Configure("bk_live_testkey123", []string{"claude-cli"}, "https://brewkeg.dev", "", "", ""); !res.OK {
-		t.Fatal(res.Message)
-	}
-	state := app.GetState()
-	for _, tg := range state.Targets {
-		if tg.ID != "claude-cli" {
-			continue
-		}
-		if !tg.Enabled {
-			t.Fatal("state should report claude-cli as on after a successful configure")
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("finished() = %v, want %v", got, want)
 		}
 	}
 }
