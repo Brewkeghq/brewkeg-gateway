@@ -321,7 +321,7 @@ func (a *App) ResetFromMenu() {
 	if plan.BackupID != "" {
 		lines = append(lines, "\nA backup is saved first, so this can be undone.")
 	}
-	if ok, _ := a.ask("Reset Gateway?", strings.Join(lines, "\n"), "Reset", "Cancel"); !ok {
+	if !a.ask("Reset Gateway?", strings.Join(lines, "\n"), "Reset", "Cancel") {
 		return
 	}
 	res := a.Reset(false)
@@ -329,10 +329,11 @@ func (a *App) ResetFromMenu() {
 }
 
 // ask and info are thin wrappers so every dialog in the app goes through one
-// pair of calls — the macOS question/alert variants take different button
-// orders and getting that wrong silently swaps Confirm and Cancel.
-func (a *App) ask(title, message, confirm, cancel string) (bool, error) {
-	return runtime.MessageDialog(a.ctx, runtime.MessageDialogOptions{
+// pair of calls — MessageDialog answers with the LABEL of the button the user
+// clicked, so the comparison has to be made against the label we asked with.
+// Getting that wrong silently makes Cancel the destructive one.
+func (a *App) ask(title, message, confirm, cancel string) bool {
+	got, err := runtime.MessageDialog(a.ctx, runtime.MessageDialogOptions{
 		Type:          runtime.QuestionDialog,
 		Title:         title,
 		Message:       message,
@@ -340,6 +341,10 @@ func (a *App) ask(title, message, confirm, cancel string) (bool, error) {
 		DefaultButton: cancel,
 		CancelButton:  cancel,
 	})
+	if err != nil {
+		return false
+	}
+	return got == confirm
 }
 
 func (a *App) info(message, title string) (string, error) {
@@ -349,6 +354,43 @@ func (a *App) info(message, title string) (string, error) {
 		Message: message,
 		Buttons: []string{"OK"},
 	})
+}
+
+// undoFromMenu is the menu route to the same undo the docket button offers. It
+// asks first: restoring a backup overwrites files, and the menu is one click
+// away from the keyboard shortcut.
+func (a *App) undoFromMenu() {
+	b, err := brewkeg.LatestBackup()
+	if err != nil {
+		_, _ = a.info("Nothing to undo: "+err.Error(), "Undo Last Change")
+		return
+	}
+	n := len(b.Entries)
+	if !a.ask("Undo last change?",
+		fmt.Sprintf("Restore backup %s?\n\n%d file(s) go back to how they were before that run.", b.ID, n),
+		"Undo", "Cancel") {
+		return
+	}
+	if _, err := a.Restore(b.ID); err != nil {
+		_, _ = a.info("Could not restore: "+err.Error(), "Undo Last Change")
+	}
+}
+
+// CheckForUpdateFromMenu reports the result in a dialog rather than only in the
+// window's banner, so a menu invocation is never silent.
+func (a *App) CheckForUpdateFromMenu() {
+	info := a.CheckForUpdate()
+	if !info.Available {
+		_, _ = a.info("Gateway "+info.Current+" is the latest version.", "Check for Updates")
+		return
+	}
+	msg := "Gateway " + info.Latest + " is available.\n\nYou are on " + info.Current + "."
+	if info.Notes != "" {
+		msg += "\n\n" + info.Notes
+	}
+	if a.ask("Update available", msg, "Open Releases", "Not now") {
+		a.OpenUpdate(info.URL)
+	}
 }
 
 // RefreshSpec asks the gateway what to write for each tool. The app renders

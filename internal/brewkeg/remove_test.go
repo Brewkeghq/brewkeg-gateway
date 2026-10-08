@@ -288,3 +288,54 @@ func TestAnyEnabledTracksRealConfigState(t *testing.T) {
 		t.Fatal("still enabled after disconnecting")
 	}
 }
+
+// Restore was leaving brewkeg behind in two files the sanitizer did not know
+// about: the Claude Code modelPicker block and ZCode's provider rules. A reset
+// has to clear both, or the tools keep advertising models from a gateway the
+// user just switched off — and status calls the machine clean while it is not.
+func TestResetClearsPickerAndZCodeRules(t *testing.T) {
+	h := home(t)
+	for _, d := range []string{".claude", filepath.Join(".zcode", "v2")} {
+		if err := os.MkdirAll(filepath.Join(h, d), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	settings := filepath.Join(h, ".claude", "settings.json")
+	WriteFile(settings, `{"theme":"dark","modelPicker":{"replaceBuiltInOptions":true,"options":[
+		{"id":"claude-opus-5","label":"Opus 5 · brewkeg"}]}}`+"\n")
+
+	zcode := filepath.Join(h, ".zcode", "v2", "provider_config.json")
+	WriteFile(zcode, `{"schemaVersion":1,"config":{
+  "providerOrder":["brewkeg","other"],
+  "providerConfigRules":{"providerRules":[
+    {"id":"brewkeg","config":{"access":{"baseUrl":"https://brewkeg.dev"}}},
+    {"id":"other","config":{"access":{"baseUrl":"https://other"}}}]},
+  "modelConfigRules":{"providerModelRules":[
+    {"providerId":"brewkeg","modelId":"claude-opus-5"},
+    {"providerId":"other","modelId":"glm-5.3"}]}}}`+"\n")
+
+	plan := PlanReset(DefaultSpec())
+	if len(plan.Targets) == 0 {
+		t.Fatal("plan should see at least the two services we just configured")
+	}
+	if _, _, _, err := Reset(DefaultSpec(), false); err != nil {
+		t.Fatal(err)
+	}
+
+	after := readFile(t, settings)
+	if strings.Contains(after, "brewkeg") {
+		t.Fatalf("modelPicker survived the reset: %s", after)
+	}
+	if !strings.Contains(after, `"theme"`) {
+		t.Fatal("reset deleted a key the user wrote")
+	}
+
+	z := readFile(t, zcode)
+	if strings.Contains(z, `"brewkeg"`) {
+		t.Fatalf("zcode still routes through brewkeg: %s", z)
+	}
+	if !strings.Contains(z, `"other"`) {
+		t.Fatal("reset deleted the user's own zcode provider")
+	}
+}

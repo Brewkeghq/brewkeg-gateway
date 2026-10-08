@@ -143,3 +143,63 @@ func flagValue(args []string, name string) string {
 	}
 	return ""
 }
+
+// runReset is the CLI half of the desktop app's "Reset Gateway…" menu item:
+// same engine, same order, same backup — so the two can never disagree about
+// what a reset does.
+func runReset(args []string) int {
+	dry := hasFlag(args, "--dry-run")
+	plan := brewkeg.PlanReset(brewkeg.DefaultSpec())
+
+	if len(plan.Targets) == 0 && !plan.Key && !plan.Config && len(plan.Caches) == 0 {
+		fmt.Println("Nothing to reset — brewkeg is not configured on this machine.")
+		return 0
+	}
+
+	fmt.Println()
+	fmt.Println("Reset brewkeg")
+	fmt.Println()
+	for _, id := range plan.Targets {
+		fmt.Println("  · disconnect", brewkeg.LabelFor(brewkeg.DefaultSpec(), id))
+	}
+	if plan.Key {
+		fmt.Println("  · forget the stored API key")
+	}
+	if plan.Config {
+		fmt.Println("  · remove", brewkeg.UserConfigPath())
+	}
+	for _, c := range plan.Caches {
+		fmt.Println("  · clear", c)
+	}
+	if len(plan.Targets) > 0 {
+		fmt.Println("\nA backup is saved first, so this can be undone with `brewkeg restore`.")
+	}
+
+	if dry {
+		fmt.Println("\n(dry run — nothing changed)")
+		return 0
+	}
+	if !confirm("Reset this machine?", false) {
+		fmt.Println("\nCancelled. Nothing changed.")
+		return 0
+	}
+
+	_, b, results, err := brewkeg.Reset(brewkeg.DefaultSpec(), false)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "\n  ✖ %v\n", err)
+		return 1
+	}
+	fmt.Println()
+	for _, r := range results {
+		if !r.OK {
+			fmt.Printf("  ✖ %s — %s\n", r.Label, r.Error)
+			continue
+		}
+		fmt.Printf("  ✔ %s — disconnected\n", r.Label)
+	}
+	if b != nil {
+		fmt.Printf("\nBackup %s saved. Undo with `brewkeg restore`.\n", b.ID)
+	}
+	fmt.Println("\nDone. Reopen your terminal if it had brewkeg exports.")
+	return 0
+}

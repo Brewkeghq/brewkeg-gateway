@@ -18,6 +18,7 @@ Usage:
   brewkeg backups               List backups
   brewkeg restore               Undo the most recent setup
   brewkeg restore --backup ID   Undo a specific setup
+  brewkeg reset                 Disconnect everything and forget the key
   brewkeg uninstall             Alias for restore
 
 Options:
@@ -59,6 +60,8 @@ func main() {
 		os.Exit(runBackups())
 	case "status", "doctor":
 		os.Exit(runStatus())
+	case "reset":
+		os.Exit(runReset(args[1:]))
 	case "uninstall":
 		os.Exit(runUninstall(args[1:]))
 	case "version", "--version", "-v":

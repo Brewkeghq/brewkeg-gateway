@@ -381,6 +381,13 @@ func enabledFor(t Target, s Spec) bool {
 		if e.ZCodeProvider != "" && ZCodePointsAtBrewkeg(resolvePath(e.ZCodeProvider)) {
 			return true
 		}
+		// The picker is a separate write to the same file, so a tool can be
+		// configured through it alone — which is exactly the state a restore
+		// that missed the picker leaves behind. Without this the switch reads
+		// off, eviction skips it, and a reset leaves the rows in place.
+		if p, ok := s.Pickers[ts.ID]; ok && PickerInstalled(resolvePath(p.Path)) {
+			return true
+		}
 		return false
 	}
 	return false

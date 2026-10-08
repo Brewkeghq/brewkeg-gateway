@@ -441,6 +441,27 @@ func TestConfigureFallsBackToTheStoredKey(t *testing.T) {
 	}
 }
 
+// homeOf is the sandbox this test is running in. t.Setenv values are only
+// readable through t, so every helper needs it passed rather than looked up.
+func homeOf(t *testing.T) string {
+	t.Helper()
+	return os.Getenv("HOME")
+}
+
+func fileExists(p string) bool {
+	_, err := os.Stat(p)
+	return err == nil
+}
+
+func readFile(t *testing.T, p string) string {
+	t.Helper()
+	raw, err := os.ReadFile(p)
+	if err != nil {
+		t.Fatalf("reading %s: %v", p, err)
+	}
+	return string(raw)
+}
+
 func readFileString(t *testing.T, p string) string {
 	t.Helper()
 	b, err := os.ReadFile(p)
@@ -616,5 +637,79 @@ func TestRemovingATargetStillReportsChanged(t *testing.T) {
 	}
 	if !removed {
 		t.Fatalf("evicting codex did not report a change: %+v", res.Results)
+	}
+}
+
+// Reset is the escape hatch every user eventually needs: point every tool away
+// from us and forget the key. It has to be complete — a reset that leaves one
+// service configured is worse than none, because status then reports the tool
+// as connected while the user believes they are done.
+func TestResetDisconnectsEverythingAndForgetsTheKey(t *testing.T) {
+	sandbox(t)
+	app := NewApp()
+
+	both := []string{"claude-cli", "codex"}
+	if res := app.Configure("bk_live_reset_1", both, "https://brewkeg.dev", "", "", ""); !res.OK {
+		t.Fatal(res.Message)
+	}
+	if !fileExists(filepath.Join(homeOf(t), ".brewkeg", "key")) {
+		t.Fatal("configure should have stored the key")
+	}
+
+	res := app.Reset(false)
+	if !strings.Contains(res.Message, "Disconnected") {
+		t.Fatalf("reset should say what it disconnected, got %q", res.Message)
+	}
+	if res.BackupID == "" {
+		t.Fatal("a reset must save a backup — it overwrites user files")
+	}
+	for _, r := range res.Results {
+		if !r.Removed {
+			t.Fatalf("%s was not disconnected by the reset: %+v", r.ID, r)
+		}
+	}
+
+	// Nothing may still be pointed at us.
+	st := app.GetState()
+	for _, tg := range st.Targets {
+		if tg.Enabled {
+			t.Fatalf("%s still reports enabled after a reset", tg.ID)
+		}
+	}
+	if fileExists(filepath.Join(homeOf(t), ".brewkeg", "key")) {
+		t.Fatal("reset must forget the stored key")
+	}
+	if st.ApiKey != "" || st.HasKey {
+		t.Fatalf("state still carries a key after a reset: %q", st.ApiKey)
+	}
+}
+
+// A dry run describes the reset and writes nothing — that is what the menu
+// confirmation is built from, so a plan that acted would act twice.
+func TestResetDryRunChangesNothing(t *testing.T) {
+	sandbox(t)
+	app := NewApp()
+
+	if res := app.Configure("bk_live_reset_2", []string{"codex"}, "https://brewkeg.dev", "", "", ""); !res.OK {
+		t.Fatal(res.Message)
+	}
+	before := readFile(t, filepath.Join(homeOf(t), ".codex", "config.toml"))
+
+	res := app.Reset(true)
+	if res.BackupID != "" {
+		t.Fatalf("a dry run must not save a backup, got %s", res.BackupID)
+	}
+	if got := readFile(t, filepath.Join(homeOf(t), ".codex", "config.toml")); got != before {
+		t.Fatal("a dry run rewrote a config file")
+	}
+	if !fileExists(filepath.Join(homeOf(t), ".brewkeg", "key")) {
+		t.Fatal("a dry run must not forget the key")
+	}
+
+	st := app.GetState()
+	for _, tg := range st.Targets {
+		if tg.ID == "codex" && !tg.Enabled {
+			t.Fatal("a dry run disconnected codex")
+		}
 	}
 }

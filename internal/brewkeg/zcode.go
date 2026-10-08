@@ -242,13 +242,16 @@ func RemoveZCodeProvider(path string) (bool, error) {
 			providers := []any{}
 			for _, r := range asSlice(pcfg["providerRules"]) {
 				rm, _ := r.(map[string]any)
-				if pid, _ := rm["providerId"].(string); pid == ZCodeProviderID {
+				// This list identifies a provider by `id`; `providerId` is the
+				// field on model rules. Matching the wrong one leaves the
+				// provider behind while reporting the removal as done.
+				if zcodeRuleIsBrewkeg(rm, "id") {
 					changed = true
 					continue
 				}
 				providers = append(providers, r)
 			}
-			if changed {
+			if len(providers) != len(asSlice(pcfg["providerRules"])) {
 				pcfg["providerRules"] = providers
 			}
 		}
@@ -271,15 +274,21 @@ func RemoveZCodeProvider(path string) (bool, error) {
 	if mcfg, ok := config["modelConfigRules"].(map[string]any); ok {
 		if len(asSlice(mcfg["providerModelRules"])) > 0 {
 			rules := []any{}
+			dropped := false
 			for _, r := range asSlice(mcfg["providerModelRules"]) {
 				rm, _ := r.(map[string]any)
-				if pid, _ := rm["providerId"].(string); pid == ZCodeProviderID {
-					changed = true
+				if zcodeRuleIsBrewkeg(rm, "providerId") {
+					dropped = true
 					continue
 				}
 				rules = append(rules, r)
 			}
-			if changed {
+			// Only rewrite the list when this loop dropped something. Reusing
+			// the shared `changed` flag here rewrites the user's list whenever
+			// an EARLIER block changed, which is noise in a diff but, worse,
+			// couples two unrelated edits.
+			if dropped {
+				changed = true
 				mcfg["providerModelRules"] = rules
 			}
 		}
@@ -294,6 +303,13 @@ func RemoveZCodeProvider(path string) (bool, error) {
 // ZCodePointsAtBrewkeg reports whether our provider is in the registry. It
 // looks for the provider, not for our marker: someone who wired brewkeg in by
 // hand must see the same switch state as someone who used the app.
+//
+// The registry keys the two rule lists differently, and reading the wrong one
+// is not a subtle miss — it reports "not configured" for a machine that is
+// configured, so the switch shows off, nothing is ever evicted, and a reset
+// leaves the tool routing through us. providerConfigRules.providerRules
+// identify a provider by `id`; modelConfigRules.providerModelRules identify it
+// by `providerId`. Both are checked, and either spelling is accepted.
 func ZCodePointsAtBrewkeg(path string) bool {
 	doc, err := loadZCode(path)
 	if err != nil {
@@ -301,10 +317,13 @@ func ZCodePointsAtBrewkeg(path string) bool {
 	}
 	config, _ := doc["config"].(map[string]any)
 	pcfg, _ := config["providerConfigRules"].(map[string]any)
-	if findRule(asSlice(pcfg["providerRules"]), "providerId", ZCodeProviderID) < 0 {
-		return false
+	for _, key := range []string{"id", "providerId"} {
+		if findRule(asSlice(pcfg["providerRules"]), key, ZCodeProviderID) >= 0 {
+			return true
+		}
 	}
-	return true
+	mcfg, _ := config["modelConfigRules"].(map[string]any)
+	return findRule(asSlice(mcfg["providerModelRules"]), "providerId", ZCodeProviderID) >= 0
 }
 
 /* ------------------------------------------------------------------ util */
@@ -350,4 +369,19 @@ func writeJSONDoc(path string, doc map[string]any) error {
 		return err
 	}
 	return WriteFile(path, string(out)+"\n")
+}
+
+// zcodeRuleIsBrewkeg reports whether one registry rule belongs to us.
+//
+// The two lists identify a provider by different fields — a provider rule by
+// `id`, a model rule by `providerId` — so every caller passes the field it is
+// actually reading. `primary` is checked too because older files written by
+// hand put the id there.
+func zcodeRuleIsBrewkeg(rule map[string]any, primary string) bool {
+	for _, k := range []string{primary, "providerId", "id"} {
+		if v, _ := rule[k].(string); v == ZCodeProviderID {
+			return true
+		}
+	}
+	return false
 }

@@ -6,6 +6,10 @@ export function CheckForUpdate() {
   return window['go']['main']['App']['CheckForUpdate']();
 }
 
+export function CheckForUpdateFromMenu() {
+  return window['go']['main']['App']['CheckForUpdateFromMenu']();
+}
+
 export function CheckKey(arg1) {
   return window['go']['main']['App']['CheckKey'](arg1);
 }
@@ -40,6 +44,10 @@ export function RefreshSpec() {
 
 export function Reset(arg1) {
   return window['go']['main']['App']['Reset'](arg1);
+}
+
+export function ResetFromMenu() {
+  return window['go']['main']['App']['ResetFromMenu']();
 }
 
 export function Restore(arg1) {

@@ -13,8 +13,11 @@ import (
 
 	"github.com/brewkeghq/brewkeg-gateway/internal/brewkeg"
 	"github.com/wailsapp/wails/v2"
+	"github.com/wailsapp/wails/v2/pkg/menu"
+	"github.com/wailsapp/wails/v2/pkg/menu/keys"
 	"github.com/wailsapp/wails/v2/pkg/options"
 	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
+	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
 //go:embed all:frontend
@@ -89,71 +92,38 @@ Undo a window session from the app's Undo button, or with: brewkeg restore
 
 // appMenu builds the macOS menu bar.
 //
-// The Edit menu is not decoration: without it ⌘C and ⌘V do nothing in the API
-// key field, which is the first thing every user does. The Gateway menu holds
-// the actions that are about this machine rather than about one service.
+// Edit and Window are declared by ROLE and carry none of our items: macOS owns
+// Undo, ⌘C/⌘V and the green button, and an app that lists those itself gets a
+// menu that looks right and does nothing. The key field is the first thing
+// every user touches, so ⌘C/⌘V has to work — the role is what makes it work.
+//
+// The application menu is ours, because the reset lives there and the stock one
+// has nowhere to put it.
 func appMenu(a *App) *menu.Menu {
-	return menu.NewMenu(
-		// macOS requires the first menu to be the application menu or the app
-		// name never appears in the bar.
-		&menu.Submenu{
-			Label: "Gateway",
-			Items: []*menu.Item{
-				{Label: "About Gateway", Type: menu.AboutType},
-				{Type: menu.SeparatorType},
-				{
-					Label:    "Get an API key…",
-					Type:     menu.OpenDirectoryType,
-					Platforms: []string{"darwin"},
-				},
-				{
-					Label:     "Check for Updates…",
-					Accelerator: keys.New(keys.Cmd(), keys.Shift(), keys.Key("u")),
-					Action:     func(_ *menu.CallbackData) { a.checkForUpdateFromMenu() },
-				},
-				{Type: menu.SeparatorType},
-				{
-					Label:     "Reset Gateway…",
-					Accelerator: keys.New(keys.Cmd(), keys.Shift(), keys.Backspace),
-					Action:     func(_ *menu.CallbackData) { a.ResetFromMenu() },
-				},
-				{Type: menu.SeparatorType},
-				{Role: macAppQuitRole()},
-			},
-		},
-		&menu.Submenu{
-			Label: "File",
-			Items: []*menu.Item{
-				{
-					Label:     "Backups folder",
-					Accelerator: keys.New(keys.Cmd(), keys.Shift(), keys.Key("b")),
-					Action:     func(_ *menu.CallbackData) { a.RevealBackupDir() },
-				},
-				{
-					Label: "Undo last change",
-					Action: func(_ *menu.CallbackData) { a.undoFromMenu() },
-				},
-			},
-		},
-		&menu.Submenu{
-			Label: "Edit",
-			Items: []*menu.Item{
-				{Role: macEditRoles("Undo")},
-				{Role: macEditRoles("Redo")},
-				{Type: menu.SeparatorType},
-				{Role: macEditRoles("Cut")},
-				{Role: macEditRoles("Copy")},
-				{Role: macEditRoles("Paste")},
-				{Role: macEditRoles("SelectAll")},
-			},
-		},
-		&menu.Submenu{
-			Label: "Window",
-			Items: []*menu.Item{
-				{Role: macWindowRoles("Minimize")},
-				{Role: macWindowRoles("Zoom")},
-				{Role: macWindowRoles("Front")},
-			},
-		},
-	)
+	m := menu.NewMenu()
+
+	app := m.AddSubmenu("Gateway")
+	app.AddText("About Gateway", nil, func(_ *menu.CallbackData) {
+		_, _ = a.info("Gateway "+brewkeg.Version+"\nby brewkeg — © 2026, proprietary.", "About Gateway")
+	})
+	app.AddSeparator()
+	app.AddText("Get an API Key…", nil, func(_ *menu.CallbackData) { a.OpenDashboard() })
+	app.AddText("Check for Updates…", keys.Combo("u", keys.CmdOrCtrlKey, keys.ShiftKey),
+		func(_ *menu.CallbackData) { a.CheckForUpdateFromMenu() })
+	app.AddSeparator()
+	// The reset. Not a switch, and deliberately not next to one: it forgets the
+	// key as well as the configs, so it asks first and describes what it found.
+	app.AddText("Reset Gateway…", keys.Combo("backspace", keys.CmdOrCtrlKey, keys.ShiftKey),
+		func(_ *menu.CallbackData) { a.ResetFromMenu() })
+	app.AddText("Backups Folder", keys.Combo("b", keys.CmdOrCtrlKey, keys.ShiftKey),
+		func(_ *menu.CallbackData) { a.RevealBackupDir() })
+	app.AddText("Undo Last Change", keys.Combo("z", keys.CmdOrCtrlKey, keys.ShiftKey),
+		func(_ *menu.CallbackData) { a.undoFromMenu() })
+	app.AddSeparator()
+	app.AddText("Quit Gateway", keys.CmdOrCtrl("q"), func(_ *menu.CallbackData) { runtime.Quit(a.ctx) })
+
+	// Role menus take no items — the OS supplies them.
+	m.Append(&menu.MenuItem{Role: menu.EditMenuRole})
+	m.Append(&menu.MenuItem{Role: menu.WindowMenuRole})
+	return m
 }

@@ -63,3 +63,29 @@ func applyPicker(path string, p ModelPickerSpec) error {
 	}
 	return WriteFile(path, string(out)+"\n")
 }
+
+// PickerInstalled reports whether a file carries a modelPicker block brewkeg
+// wrote. Used as an "is this tool configured" signal, so it has to be precise:
+// a user who wrote their own modelPicker is NOT configured by us and must not
+// have it deleted.
+//
+// The label is the marker. Every option brewkeg installs is labelled
+// "…· brewkeg", and we write the block as a whole — so a single matching
+// option means the block is ours.
+func PickerInstalled(path string) bool {
+	doc := map[string]any{}
+	if err := json.Unmarshal([]byte(ReadFile(path)), &doc); err != nil {
+		return false
+	}
+	picker, _ := doc["modelPicker"].(map[string]any)
+	if picker == nil {
+		return false
+	}
+	for _, o := range asSlice(picker["options"]) {
+		m, _ := o.(map[string]any)
+		if label, _ := m["label"].(string); strings.Contains(label, "brewkeg") {
+			return true
+		}
+	}
+	return false
+}
