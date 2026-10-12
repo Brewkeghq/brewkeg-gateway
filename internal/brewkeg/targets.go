@@ -202,6 +202,25 @@ func (t specTarget) Apply(b *Backup, o Options) (string, error) {
 		written = append(written, path)
 	}
 
+	// Carry the user's existing MCP servers onto the third-party side:
+	// standard Desktop and the -3p app read different claude_desktop_config.json
+	// files, so switching inference otherwise drops their connectors silently.
+	// Merge-missing-only, backed up like every other write, so --undo restores
+	// the 3P file byte-exact.
+	if t.ID() == "desktop" {
+		mcpPath := ClaudeDesktopMcpConfig()
+		if err := b.Capture(t.ID(), mcpPath); err != nil {
+			return "", err
+		}
+		migrated, kept, err := ClaudeDesktopMigrateMcp()
+		if err != nil {
+			return "", err
+		}
+		if migrated+kept > 0 {
+			written = append(written, fmt.Sprintf("mcp %d migrated, %d kept", migrated, kept))
+		}
+	}
+
 	if t.spec.Enabled.ShellBlock {
 		if cleared, err := ClearStaleGatewayCaches(b); err == nil {
 			for _, c := range cleared {

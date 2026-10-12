@@ -214,3 +214,141 @@ func TestLineupDefaultsToAllThree(t *testing.T) {
 		t.Errorf("defaults collapsed: main=%q sonnet=%q fast=%q", o.MainModel, o.SonnetModel, o.FastModel)
 	}
 }
+
+// writeStdMcp writes a standard (non-3P) Desktop MCP config into the temp home.
+func writeStdMcp(t *testing.T, body string) {
+	t.Helper()
+	p := ClaudeDesktopStdMcpConfig()
+	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(p, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func readMcpServers(t *testing.T, path string) map[string]any {
+	t.Helper()
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var doc map[string]any
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		t.Fatal(err)
+	}
+	servers, _ := doc["mcpServers"].(map[string]any)
+	return servers
+}
+
+// No standard config: nothing to do, and the 3P file must not be created.
+func TestMigrateMcpNoSourceIsNoop(t *testing.T) {
+	withTempHome(t)
+	m, k, err := ClaudeDesktopMigrateMcp()
+	if err != nil || m != 0 || k != 0 {
+		t.Fatalf("got %d,%d,%v", m, k, err)
+	}
+	if FileExists(ClaudeDesktopMcpConfig()) {
+		t.Fatal("must not create the 3p file when there is nothing to migrate")
+	}
+}
+
+// A source with no mcpServers key is also nothing to do.
+func TestMigrateMcpNoServersIsNoop(t *testing.T) {
+	withTempHome(t)
+	writeStdMcp(t, `{"otherKey":true}`+"\n")
+	if m, k, err := ClaudeDesktopMigrateMcp(); err != nil || m != 0 || k != 0 {
+		t.Fatalf("got %d,%d,%v", m, k, err)
+	}
+}
+
+// Fresh 3P side: everything migrates, and server bodies survive byte-identical
+// in meaning (command/args/env/url shapes preserved as types).
+func TestMigrateMcpCreatesAndRerunsKept(t *testing.T) {
+	withTempHome(t)
+	writeStdMcp(t, `{"mcpServers":{`+
+		`"figma":{"command":"npx","args":["-y","figma-mcp"],"env":{"KEY":"v"}},`+
+		`"hyperframe":{"url":"https://mcp.example.io"}}}`+"\n")
+	m, k, err := ClaudeDesktopMigrateMcp()
+	if err != nil || m != 2 || k != 0 {
+		t.Fatalf("got %d,%d,%v", m, k, err)
+	}
+	servers := readMcpServers(t, ClaudeDesktopMcpConfig())
+	figma, _ := servers["figma"].(map[string]any)
+	if figma["command"] != "npx" {
+		t.Fatalf("server body mangled: %v", servers["figma"])
+	}
+	if args, _ := figma["args"].([]any); len(args) != 2 || args[0] != "-y" {
+		t.Fatalf("args mangled: %v", figma["args"])
+	}
+	if env, _ := figma["env"].(map[string]any); env["KEY"] != "v" {
+		t.Fatalf("env mangled: %v", figma["env"])
+	}
+
+	// Second run: nothing new, everything kept.
+	m, k, err = ClaudeDesktopMigrateMcp()
+	if err != nil || m != 0 || k != 2 {
+		t.Fatalf("rerun got %d,%d,%v", m, k, err)
+	}
+}
+
+// A 3P-side entry is never overwritten, even when the standard side disagrees.
+func TestMigrateMcpNeverOverwrites3p(t *testing.T) {
+	withTempHome(t)
+	writeStdMcp(t, `{"mcpServers":{"a":{"command":"old"},"b":{"command":"new"}}}`+"\n")
+	dst := ClaudeDesktopMcpConfig()
+	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	before := `{"mcpServers":{"a":{"command":"mine"}},"theme":"dark"}` + "\n"
+	if err := os.WriteFile(dst, []byte(before), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	m, k, err := ClaudeDesktopMigrateMcp()
+	if err != nil || m != 1 || k != 1 {
+		t.Fatalf("got %d,%d,%v", m, k, err)
+	}
+	servers := readMcpServers(t, dst)
+	if a, _ := servers["a"].(map[string]any); a["command"] != "mine" {
+		t.Fatalf("3p entry overwritten: %v", servers["a"])
+	}
+	if b, _ := servers["b"].(map[string]any); b["command"] != "new" {
+		t.Fatalf("missing server not added: %v", servers)
+	}
+	// Unrelated 3P keys survive the merge.
+	raw, _ := os.ReadFile(dst)
+	var doc map[string]any
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		t.Fatal(err)
+	}
+	if doc["theme"] != "dark" {
+		t.Fatalf("unrelated key lost: %v", doc)
+	}
+}
+
+// Invalid JSON on either side aborts with no write.
+func TestMigrateMcpInvalidJSONAborts(t *testing.T) {
+	withTempHome(t)
+	writeStdMcp(t, `{"mcpServers":`+"\n")
+	if _, _, err := ClaudeDesktopMigrateMcp(); err == nil {
+		t.Fatal("invalid source must abort")
+	}
+	if FileExists(ClaudeDesktopMcpConfig()) {
+		t.Fatal("invalid source must not create the 3p file")
+	}
+
+	writeStdMcp(t, `{"mcpServers":{"a":{"command":"x"}}}`+"\n")
+	dst := ClaudeDesktopMcpConfig()
+	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(dst, []byte(`not json`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := ClaudeDesktopMigrateMcp(); err == nil {
+		t.Fatal("invalid 3p file must abort")
+	}
+	if raw, _ := os.ReadFile(dst); string(raw) != `not json` {
+		t.Fatal("invalid 3p file must be left untouched")
+	}
+}

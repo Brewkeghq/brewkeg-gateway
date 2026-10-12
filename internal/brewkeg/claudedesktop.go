@@ -4,6 +4,7 @@ import (
 	crand "crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -203,4 +204,78 @@ func newConfigID() (string, error) {
 	b[8] = (b[8] & 0x3f) | 0x80 // RFC 4122 variant
 	h := hex.EncodeToString(b[:])
 	return h[0:8] + "-" + h[8:12] + "-" + h[12:16] + "-" + h[16:20] + "-" + h[20:], nil
+}
+
+// ClaudeDesktopMcpConfig is the third-party side's local MCP file. Standard
+// Desktop reads claude_desktop_config.json from the un-suffixed userData dir,
+// while the third-party app reads the same filename from its own -3p dir — so
+// a user's existing servers never carry over on their own.
+func ClaudeDesktopMcpConfig() string {
+	return filepath.Join(ClaudeDesktopSupportDir(), "claude_desktop_config.json")
+}
+
+// ClaudeDesktopStdMcpConfig is the standard (non-third-party) Desktop MCP
+// file the user already has.
+func ClaudeDesktopStdMcpConfig() string {
+	return filepath.Join(ClaudeDesktopUserDataDir(), "claude_desktop_config.json")
+}
+
+// ClaudeDesktopMigrateMcp carries the user's existing MCP servers from
+// standard Desktop into the third-party side, so switching inference to the
+// gateway does not silently drop their connectors.
+//
+// Merge-missing-only: a server already present on the 3P side is never
+// overwritten. Returns migrated and kept counts. A missing source file is
+// (0, 0, nil) — nothing to do, not an error. Invalid JSON on either side
+// aborts with no write.
+func ClaudeDesktopMigrateMcp() (migrated, kept int, err error) {
+	src := ClaudeDesktopStdMcpConfig()
+	raw := ReadFile(src)
+	if strings.TrimSpace(raw) == "" {
+		return 0, 0, nil
+	}
+	var srcDoc map[string]any
+	if err := json.Unmarshal([]byte(raw), &srcDoc); err != nil {
+		return 0, 0, fmt.Errorf("%s is not valid JSON — fix or move it, then re-run", src)
+	}
+	srcServers, _ := srcDoc["mcpServers"].(map[string]any)
+	if len(srcServers) == 0 {
+		return 0, 0, nil
+	}
+	dst := ClaudeDesktopMcpConfig()
+	dstDoc := map[string]any{}
+	if draw := ReadFile(dst); strings.TrimSpace(draw) != "" {
+		if err := json.Unmarshal([]byte(draw), &dstDoc); err != nil {
+			return 0, 0, fmt.Errorf("%s is not valid JSON — fix or move it, then re-run", dst)
+		}
+	}
+	dstServers, _ := dstDoc["mcpServers"].(map[string]any)
+	if dstServers == nil {
+		dstServers = map[string]any{}
+	}
+	for name, srv := range srcServers {
+		if _, ok := dstServers[name]; ok {
+			kept++
+			continue
+		}
+		dstServers[name] = srv
+		migrated++
+	}
+	if migrated == 0 {
+		return 0, kept, nil
+	}
+	dstDoc["mcpServers"] = dstServers
+	out, err := json.MarshalIndent(dstDoc, "", "  ")
+	if err != nil {
+		return 0, 0, err
+	}
+	// The directory may not exist yet on a machine that signed in but never
+	// configured anything 3P-side.
+	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+		return 0, 0, err
+	}
+	if err := WriteFile(dst, string(out)+"\n"); err != nil {
+		return 0, 0, err
+	}
+	return migrated, kept, nil
 }
