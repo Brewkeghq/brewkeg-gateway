@@ -75,11 +75,41 @@ that race has bitten twice and is not a code fault.
 - `internal/brewkeg/` — the engine. One file per concern:
   `paths` `block` `backup` `targets` `spec` `validate` `picker` `keystore`
   `userconfig` `claudedesktop` `zcode` `relaunch` `remove`
+  `catalog` (the gateway's model list and usage API) `agents` (the launchable
+  coding agents) `session` (per-session paths)
 - `main.go` `setup.go` `restore.go` `prompt.go` — the CLI
+- `commands.go` `doctor.go` `launch.go` `menu.go` `update.go` — the command
+  surface the CLI shows a customer: menu, login, models, doctor, usage,
+  update, desktop, and one launcher per coding agent
 - `desktop/` — `app.go` (bindings) `headless.go` (`--apply` / `--undo`)
   `update.go`, `main.go`, `frontend/`
 - `docs/unsupported-targets.md` — why Cursor and Antigravity are **not**
   targets. Read it before adding a tool: most of them have no file we own.
+
+## The command surface
+
+`brewkeg` with no arguments opens a menu. The rest of the surface mirrors
+Novita's `novi` CLI, one command per thing a customer asks for:
+
+| Command | What it does |
+|---|---|
+| `brewkeg login` | stores the API key in `~/.brewkeg/key` |
+| `brewkeg models` | the live catalogue with prices, from `/api/catalog` |
+| `brewkeg doctor` | key, agents, agent versions, desktop connections |
+| `brewkeg usage [--last 7d] [--json]` | the key's own usage, from `/api/usage` |
+| `brewkeg update [--check]` | self-update from the GitHub release |
+| `brewkeg desktop status` | which desktop apps are connected |
+| `brewkeg desktop disconnect --all` | take brewkeg out of every tool |
+| `brewkeg claude\|codex\|opencode\|pi\|dsh\|kilo\|command-code` | run an agent on brewkeg |
+
+Every launcher takes `--model M` and `--print-env`, and passes everything else
+through to the agent.
+
+**A launcher points the agent at `brewkeg.dev` directly.** There is no local
+relay: nothing to keep alive, nothing to lose on a reboot, and the agent talks
+to the gateway over TLS with the customer's own key. Novita runs a local relay
+because it must rewrite the upstream; we do not, so we do not need one.
+
 
 ## Adding a tool
 

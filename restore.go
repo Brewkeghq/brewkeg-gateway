@@ -38,9 +38,11 @@ func runRestore(args []string) int {
 		fmt.Println("\n(dry run — nothing written)")
 		return 0
 	}
-	if !confirm(fmt.Sprintf("\nRestore these files to how they were on %s?", b.CreatedAt), false) {
-		fmt.Println("Cancelled. Nothing changed.")
-		return 1
+	if !hasFlag(args, "--yes") && !hasFlag(args, "-y") {
+		if !confirm(fmt.Sprintf("\nRestore these files to how they were on %s?", b.CreatedAt), false) {
+			fmt.Println("Cancelled. Nothing changed.")
+			return 1
+		}
 	}
 
 	results, err := b.Restore(false)
@@ -109,17 +111,28 @@ func runUninstall(args []string) int {
 	b, err := brewkeg.LatestBackup()
 	if err != nil {
 		fmt.Printf("Nothing to undo: %v\n", err)
-		return 0
-	}
-	fmt.Println("This restores your configs from backup", b.ID)
-	if code := runRestore(append(args, "--backup", b.ID)); code != 0 {
-		return code
+	} else {
+		fmt.Println("This restores your configs from backup", b.ID)
+		if code := runRestore(append(args, "--backup", b.ID)); code != 0 {
+			return code
+		}
 	}
 	// Uninstall is explicit: forget the key too, so it does not sit in
 	// ~/.brewkeg/key after the user asked us to leave.
 	if err := brewkeg.ClearKey(); err != nil {
 		fmt.Fprintf(os.Stderr, "  note: could not clear stored key: %v\n", err)
 	}
+	// And remove the binary. On unix the running file can be unlinked; on
+	// windows it cannot, so the note says where it is instead of failing.
+	self, err := os.Executable()
+	if err != nil {
+		return 0
+	}
+	if err := os.Remove(self); err != nil {
+		fmt.Printf("\nCould not remove %s — delete it yourself.\n", self)
+		return 0
+	}
+	fmt.Printf("\nRemoved %s\n", self)
 	return 0
 }
 
