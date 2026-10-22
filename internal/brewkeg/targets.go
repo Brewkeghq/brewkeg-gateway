@@ -743,7 +743,10 @@ func writeJSONPlain(path string, entries []KVSpec, o Options) error {
 		}
 	}
 	for _, e := range entries {
-		doc[e.Name] = typedValue(expand(e.Value, o))
+		// expandJSON, not expand: a value that is JSON text gets its
+		// placeholders escaped for the JSON string literal they land in.
+		// A Windows path does not survive the plain way.
+		doc[e.Name] = typedValue(expandJSON(e.Value, o))
 	}
 	out, err := json.MarshalIndent(doc, "", "  ")
 	if err != nil {

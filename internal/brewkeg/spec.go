@@ -172,24 +172,89 @@ const (
 	phCodexModel  = "{{codexModel}}"
 )
 
-func expand(v string, o Options) string {
-	return strings.NewReplacer(
-		phBaseURL, o.BaseURL,
-		phBaseURLV1, strings.TrimRight(o.BaseURL, "/")+"/v1",
+// placeholderPairs is what a spec value can be built from.
+func placeholderPairs(o Options) [][2]string {
+	return [][2]string{
+		{phBaseURL, o.BaseURL},
+		{phBaseURLV1, strings.TrimRight(o.BaseURL, "/") + "/v1"},
 		// The origin, without a trailing slash. A URL built from it needs
 		// exactly one slash between the host and the path.
-		phOrigin, strings.TrimRight(o.BaseURL, "/"),
+		{phOrigin, strings.TrimRight(o.BaseURL, "/")},
 		// This binary's own absolute path. Claude Desktop's managed MCP
 		// servers want an absolute path to an executable, and a bare
 		// "brewkeg" would depend on the PATH the app happened to start with.
-		phSelfPath, SelfPath(),
-		phAPIKey, o.APIKey,
-		phMainModel, o.MainModel,
-		phSonnetModel, o.SonnetModel,
-		phFastModel, o.FastModel,
-		phCodexModel, o.CodexModel,
-	).Replace(v)
+		{phSelfPath, selfPathFn()},
+		{phAPIKey, o.APIKey},
+		{phMainModel, o.MainModel},
+		{phSonnetModel, o.SonnetModel},
+		{phFastModel, o.FastModel},
+		{phCodexModel, o.CodexModel},
+	}
 }
+
+func expand(v string, o Options) string {
+	return expandPairs(v, placeholderPairs(o))
+}
+
+func expandPairs(v string, pairs [][2]string) string {
+	for _, p := range pairs {
+		v = strings.ReplaceAll(v, p[0], p[1])
+	}
+	return v
+}
+
+// expandJSON expands placeholders in a value that is JSON text.
+//
+// The substituted text lands inside a JSON string literal, so it has to be
+// escaped for that literal. A Windows path is where this bites:
+//
+//	"command": "C:\Users\me\brewkeg.exe"
+//
+// "\U" is not a valid JSON escape, so the document stops being JSON. The
+// writer then falls back to writing the whole value as a string, and the app
+// gets "managedMcpServers": "[{...}]" where it expects an array — silently,
+// and only on Windows. Escaping the substituted text keeps the document
+// parseable on every OS.
+//
+// A value that is not JSON text is expanded the plain way: a bare string has
+// no literal to escape for, and escaping it would put backslashes in a URL.
+func expandJSON(v string, o Options) string {
+	return expandPairsJSON(v, placeholderPairs(o))
+}
+
+// expandPairsJSON is expandJSON with the pairs supplied, so a test can put a
+// Windows path in where the real one would go.
+func expandPairsJSON(v string, pairs [][2]string) string {
+	trimmed := strings.TrimSpace(v)
+	if !strings.HasPrefix(trimmed, "{") && !strings.HasPrefix(trimmed, "[") {
+		return expandPairs(v, pairs)
+	}
+	escaped := make([][2]string, 0, len(pairs))
+	for _, p := range pairs {
+		escaped = append(escaped, [2]string{p[0], jsonStringBody(p[1])})
+	}
+	return expandPairs(v, escaped)
+}
+
+// jsonStringBody escapes s the way it must appear inside a JSON string
+// literal: the body without the surrounding quotes.
+func jsonStringBody(s string) string {
+	b, err := json.Marshal(s)
+	if err != nil {
+		return s
+	}
+	if len(b) < 2 {
+		return s
+	}
+	// Strip exactly the outer quotes. Trimming would also eat a quote that
+	// belongs to the content.
+	return string(b[1 : len(b)-1])
+}
+
+// selfPathFn is SelfPath, behind a name a test can point somewhere else. A
+// Windows path is the only one that breaks the JSON, and a test on macOS
+// cannot produce one on its own.
+var selfPathFn = SelfPath
 
 // SelfPath is the absolute path of this binary, or a bare name when the OS
 // will not say.
