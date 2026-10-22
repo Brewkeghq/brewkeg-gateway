@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -124,7 +125,10 @@ func TestDesktopConfigRunsTheMcpServerAsALocalProcess(t *testing.T) {
 		t.Errorf("transport = %v, want stdio", entry["transport"])
 	}
 	command, _ := entry["command"].(string)
-	if !strings.HasPrefix(command, "/") {
+	// filepath.IsAbs, not a "/" prefix: on Windows the absolute path is
+	// "C:\...\brewkeg.exe", and a Unix-only assertion fails the release
+	// on the one platform that has the other path shape.
+	if !filepath.IsAbs(command) {
 		t.Errorf("command = %q, want an absolute path", command)
 	}
 	args, ok := entry["args"].([]any)
