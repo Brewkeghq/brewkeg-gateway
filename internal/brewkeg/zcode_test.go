@@ -91,7 +91,7 @@ func TestWriteZCodeAddsBrewkegWithoutTouchingOtherProviders(t *testing.T) {
 	withTempHome(t)
 	writeZCodeFixture(t, zcodeFixture)
 
-	if err := WriteZCodeProvider(zcodePath(t), opts()); err != nil {
+	if err := WriteZCodeProvider(zcodePath(t), opts(), nil); err != nil {
 		t.Fatal(err)
 	}
 
@@ -145,11 +145,11 @@ func TestWriteZCodeIsIdempotent(t *testing.T) {
 	withTempHome(t)
 	writeZCodeFixture(t, zcodeFixture)
 
-	if err := WriteZCodeProvider(zcodePath(t), opts()); err != nil {
+	if err := WriteZCodeProvider(zcodePath(t), opts(), nil); err != nil {
 		t.Fatal(err)
 	}
 	first := ReadFile(zcodePath(t))
-	if err := WriteZCodeProvider(zcodePath(t), opts()); err != nil {
+	if err := WriteZCodeProvider(zcodePath(t), opts(), nil); err != nil {
 		t.Fatal(err)
 	}
 	if second := ReadFile(zcodePath(t)); second != first {
@@ -164,11 +164,11 @@ func TestWriteZCodeUpdatesTheKeyInPlace(t *testing.T) {
 	writeZCodeFixture(t, zcodeFixture)
 
 	o := opts()
-	if err := WriteZCodeProvider(zcodePath(t), o); err != nil {
+	if err := WriteZCodeProvider(zcodePath(t), o, nil); err != nil {
 		t.Fatal(err)
 	}
 	o.APIKey = "bk_live_rotated"
-	if err := WriteZCodeProvider(zcodePath(t), o); err != nil {
+	if err := WriteZCodeProvider(zcodePath(t), o, nil); err != nil {
 		t.Fatal(err)
 	}
 
@@ -202,7 +202,7 @@ func TestWriteZCodePreservesOurOwnUnknownFields(t *testing.T) {
       "modelConfigRules":{"providerModelRules":[],"manualProviderModelRules":[]}}}`
 	writeZCodeFixture(t, withOurs)
 
-	if err := WriteZCodeProvider(zcodePath(t), opts()); err != nil {
+	if err := WriteZCodeProvider(zcodePath(t), opts(), nil); err != nil {
 		t.Fatal(err)
 	}
 	raw := ReadFile(zcodePath(t))
@@ -222,12 +222,12 @@ func TestWriteZCodeDropsRulesForModelsNoLongerOffered(t *testing.T) {
 	withTempHome(t)
 	writeZCodeFixture(t, zcodeFixture)
 
-	if err := WriteZCodeProvider(zcodePath(t), opts()); err != nil {
+	if err := WriteZCodeProvider(zcodePath(t), opts(), nil); err != nil {
 		t.Fatal(err)
 	}
 	o := opts()
 	o.FastModel = ""
-	if err := WriteZCodeProvider(zcodePath(t), o); err != nil {
+	if err := WriteZCodeProvider(zcodePath(t), o, nil); err != nil {
 		t.Fatal(err)
 	}
 
@@ -248,7 +248,7 @@ func TestWriteZCodeDropsRulesForModelsNoLongerOffered(t *testing.T) {
 func TestRemoveZCodeProviderLeavesEveryoneElseAlone(t *testing.T) {
 	withTempHome(t)
 	writeZCodeFixture(t, zcodeFixture)
-	if err := WriteZCodeProvider(zcodePath(t), opts()); err != nil {
+	if err := WriteZCodeProvider(zcodePath(t), opts(), nil); err != nil {
 		t.Fatal(err)
 	}
 
@@ -285,7 +285,7 @@ func TestRemoveZCodeProviderLeavesEveryoneElseAlone(t *testing.T) {
 // error, and must come out valid.
 func TestWriteZCodeCreatesTheFileWhenThereIsNone(t *testing.T) {
 	withTempHome(t)
-	if err := WriteZCodeProvider(zcodePath(t), opts()); err != nil {
+	if err := WriteZCodeProvider(zcodePath(t), opts(), nil); err != nil {
 		t.Fatal(err)
 	}
 	var m map[string]any
@@ -304,7 +304,7 @@ func TestWriteZCodeRefusesToClobberInvalidJSON(t *testing.T) {
 	withTempHome(t)
 	writeZCodeFixture(t, `{"schemaVersion":1,"config":`)
 
-	err := WriteZCodeProvider(zcodePath(t), opts())
+	err := WriteZCodeProvider(zcodePath(t), opts(), nil)
 	if err == nil {
 		t.Fatal("invalid JSON must be reported, not silently replaced")
 	}
@@ -320,7 +320,7 @@ func TestWriteZCodeRefusesToClobberInvalidJSON(t *testing.T) {
 func TestWriteZCodePutsBrewkegFirstInTheOrder(t *testing.T) {
 	withTempHome(t)
 	writeZCodeFixture(t, zcodeFixture)
-	if err := WriteZCodeProvider(zcodePath(t), opts()); err != nil {
+	if err := WriteZCodeProvider(zcodePath(t), opts(), nil); err != nil {
 		t.Fatal(err)
 	}
 	cfg, _ := readZCode(t)["config"].(map[string]any)
@@ -330,5 +330,64 @@ func TestWriteZCodePutsBrewkegFirstInTheOrder(t *testing.T) {
 	}
 	if order[1] != "zai-coding-plan" {
 		t.Fatalf("the user's provider was dropped from the order: %v", order)
+	}
+}
+
+// The model list the registry offers comes from the spec, not from the
+// engine's own defaults: the server owns the catalogue, and the engine must
+// not invent a model the gateway does not serve. ZCode is the one
+// multi-model agent, so its list is the whole served catalogue.
+func TestZCodeLineupComesFromTheSpec(t *testing.T) {
+	withTempHome(t)
+	writeZCodeFixture(t, zcodeFixture)
+
+	models := []string{"claude-opus-5", "gpt-5.5", "gpt-5.6-luna"}
+	if err := WriteZCodeProvider(zcodePath(t), opts(), models); err != nil {
+		t.Fatal(err)
+	}
+
+	providers, _ := zcodeRules(t)
+	var ours map[string]any
+	for _, p := range providers {
+		m, _ := p.(map[string]any)
+		if m["providerId"] == ZCodeProviderID {
+			ours = m
+		}
+	}
+	if ours == nil {
+		t.Fatal("brewkeg's provider rule is missing")
+	}
+	cfg, _ := ours["config"].(map[string]any)
+	ids := asSlice(cfg["personalModelIds"])
+	if len(ids) != len(models) {
+		t.Fatalf("personalModelIds = %v, want the spec's list %v", ids, models)
+	}
+	for i, want := range models {
+		if ids[i] != want {
+			t.Fatalf("personalModelIds[%d] = %v, want %v", i, ids[i], want)
+		}
+	}
+}
+
+// With no list in the spec the registry falls back to the three defaults,
+// and to nothing else — the engine does not reach for a model on its own.
+func TestZCodeLineupFallsBackToTheDefaults(t *testing.T) {
+	withTempHome(t)
+	writeZCodeFixture(t, zcodeFixture)
+
+	if err := WriteZCodeProvider(zcodePath(t), opts(), nil); err != nil {
+		t.Fatal(err)
+	}
+	providers, _ := zcodeRules(t)
+	for _, p := range providers {
+		m, _ := p.(map[string]any)
+		if m["providerId"] != ZCodeProviderID {
+			continue
+		}
+		cfg, _ := m["config"].(map[string]any)
+		ids := asSlice(cfg["personalModelIds"])
+		if len(ids) != 3 {
+			t.Fatalf("personalModelIds = %v, want the three defaults", ids)
+		}
 	}
 }

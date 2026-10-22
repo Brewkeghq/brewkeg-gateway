@@ -69,6 +69,15 @@ type TargetSpec struct {
 	// change to take effect. A config file is read once at launch, so writing
 	// it does nothing until the app comes back.
 	RestartApps []RelaunchApp `json:"restartApps,omitempty"`
+	// Models are the model ids this harness may use.
+	//
+	// The server owns the list, because the server owns the catalogue: a
+	// harness gets the models of its own protocol (Claude Code and Claude
+	// Desktop the Anthropic family, Codex the OpenAI one) and ZCode — the one
+	// multi-model agent — the whole served catalogue. The engine never
+	// decides this for itself, and it never adds a model the list does not
+	// name.
+	Models []string `json:"models,omitempty"`
 }
 
 type DetectSpec struct {
@@ -365,15 +374,23 @@ func FetchSpec(ctx context.Context, baseURL string) (Spec, error) {
 // DefaultPickers replaces Claude Code's model picker with brewkeg's catalogue.
 // Kept in step with what the server serves; the server's copy wins when it is
 // reachable, so the two can never disagree about which models exist.
+//
+// The Claude family and nothing else: Claude Code speaks the Anthropic
+// protocol, and a picker full of models the tool cannot run is a list
+// nobody should be shown. The server drops a retired id (claude-haiku-4-5
+// retired on 2026-10-15), and this offline copy cannot know the date, so it
+// is the server's list that is the authority.
 func DefaultPickers() map[string]ModelPickerSpec {
 	return map[string]ModelPickerSpec{
 		"claude-cli": {
 			Path:    ".claude/settings.json",
 			Replace: true,
 			Options: []PickerOption{
+				{Model: "claude-fable-5", Label: "Fable 5 · brewkeg", Description: "Deepest work on hard codebases · 1M context"},
+				{Model: "claude-opus-5-5", Label: "Opus 5.5 · brewkeg", Description: "Deepest work on hard codebases · 1M context"},
 				{Model: "claude-opus-5", Label: "Opus 5 · brewkeg", Description: "Deepest work on hard codebases · 1M context"},
+				{Model: "claude-sonnet-5-5", Label: "Sonnet 5.5 · brewkeg", Description: "Everyday coding · 1M context"},
 				{Model: "claude-sonnet-5", Label: "Sonnet 5 · brewkeg", Description: "Everyday coding · 1M context"},
-				{Model: "claude-haiku-4-5", Label: "Haiku 4.5 · brewkeg", Description: "Quick checks and edits · 200K context"},
 			},
 		},
 	}

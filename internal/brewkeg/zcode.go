@@ -110,7 +110,12 @@ func findRule(rules []any, field, want string) int {
 }
 
 // WriteZCodeProvider points ZCode at brewkeg and makes it the first choice.
-func WriteZCodeProvider(path string, o Options) error {
+//
+// models is the list of model ids the registry offers, published by the
+// server with the rest of the spec. ZCode is the one multi-model agent, so
+// its list is the whole served catalogue; an empty list falls back to the
+// three defaults below.
+func WriteZCodeProvider(path string, o Options, models []string) error {
 	doc, err := loadZCode(path)
 	if err != nil {
 		return err
@@ -123,6 +128,7 @@ func WriteZCodeProvider(path string, o Options) error {
 	}
 
 	config := ensureMap(doc, "config")
+	lineup := zcodeLineup(o, models)
 
 	/* ------------------------------------------------ the provider itself */
 
@@ -144,8 +150,8 @@ func WriteZCodeProvider(path string, o Options) error {
 				"type":    "anthropic-messages",
 				"baseUrl": strings.TrimRight(o.BaseURL, "/") + "/v1",
 			},
-			"personalModelIds": toAnySlice(zcodeLineup(o)),
-			"modelOrder":       toAnySlice(zcodeLineup(o)),
+			"personalModelIds": toAnySlice(lineup),
+			"modelOrder":       toAnySlice(lineup),
 		},
 	}
 
@@ -179,7 +185,7 @@ func WriteZCodeProvider(path string, o Options) error {
 	mcfg := ensureMap(config, "modelConfigRules")
 	rules := []any{}
 	kept := map[string]bool{}
-	for _, m := range zcodeLineup(o) {
+	for _, m := range lineup {
 		kept[m] = true
 	}
 
@@ -204,7 +210,7 @@ func WriteZCodeProvider(path string, o Options) error {
 		}
 		rules = append(rules, r)
 	}
-	for _, m := range zcodeLineup(o) {
+	for _, m := range lineup {
 		if findRule(rules, "modelId", m) < 0 {
 			rules = append(rules, map[string]any{
 				"modelId": m,
@@ -328,10 +334,16 @@ func ZCodePointsAtBrewkeg(path string) bool {
 
 /* ------------------------------------------------------------------ util */
 
-// zcodeLineup is the same three-model rule the rest of the app follows: a
-// partial lineup in Claude Desktop deletes a row from the picker, and the same
-// instinct applies to a model list.
-func zcodeLineup(o Options) []string {
+// zcodeLineup is the list of models the registry offers.
+//
+// The server publishes it with the rest of the spec (the zcode target's
+// `models`), because the server owns the catalogue and the engine must not
+// invent a model the gateway does not serve. The three defaults are the
+// offline fallback, for when the spec carries no list.
+func zcodeLineup(o Options, models []string) []string {
+	if len(models) > 0 {
+		return models
+	}
 	var out []string
 	for _, m := range []string{o.MainModel, o.SonnetModel, o.FastModel} {
 		if m != "" {

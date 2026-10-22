@@ -192,7 +192,7 @@ func (t specTarget) Apply(b *Backup, o Options) (string, error) {
 		case "toml-provider":
 			err = writeTOMLProvider(path, f.Entries, o, rootKeysOf(t.spec.Enabled))
 		case "zcode-provider":
-			err = WriteZCodeProvider(path, o)
+			err = WriteZCodeProvider(path, o, t.spec.Models)
 		default:
 			err = fmt.Errorf("unknown file kind %q in spec", f.Kind)
 		}
