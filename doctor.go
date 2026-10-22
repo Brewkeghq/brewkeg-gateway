@@ -20,12 +20,12 @@ func runDoctor(args []string) int {
 	if key == "" {
 		fmt.Println("✗ API key missing — run `brewkeg login`")
 	} else {
-		res := checkKey(context.Background(), brewkeg.BaseURL(), key)
+		res := checkKey(context.Background(), brewkeg.UserBaseURL(), key)
 		switch {
 		case res.Rejected:
 			fmt.Printf("✗ API key rejected (%s) — run `brewkeg login`\n", res.Message)
 		case !res.Reachable:
-			fmt.Printf("! API key untested — could not reach %s\n", brewkeg.BaseURL())
+			fmt.Printf("! API key untested — could not reach %s\n", brewkeg.UserBaseURL())
 		case res.Accepted:
 			fmt.Printf("✓ API key accepted (%s)\n", brewkeg.MaskKey(key))
 		default:
@@ -40,6 +40,18 @@ func runDoctor(args []string) int {
 
 	fmt.Println()
 	printDesktopStatus()
+
+	// The plugin marketplace is the one thing a broken setup cannot announce
+	// itself: the tab is simply empty, and an empty tab looks like a product
+	// with no plugins rather than a setup that did not finish.
+	if key != "" {
+		st := brewkeg.CheckMarketplace(context.Background(), brewkeg.UserBaseURL(), key)
+		if st.Served {
+			fmt.Printf("✓ Plugin marketplace: %s\n", st.Message)
+		} else {
+			fmt.Printf("✗ Plugin marketplace: %s\n", st.Message)
+		}
+	}
 	return 0
 }
 
@@ -196,7 +208,7 @@ func desktopDisconnect(args []string) int {
 		fmt.Fprintln(os.Stderr, "brewkeg: disconnect needs --all")
 		return 2
 	}
-	spec, _ := brewkeg.FetchSpec(context.Background(), brewkeg.BaseURL())
+	spec, _ := brewkeg.FetchSpec(context.Background(), brewkeg.UserBaseURL())
 	plan := brewkeg.PlanReset(spec)
 	if len(plan.Targets) == 0 {
 		fmt.Println("Nothing to disconnect — brewkeg is not connected on this machine.")

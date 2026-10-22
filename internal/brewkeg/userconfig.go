@@ -46,6 +46,23 @@ func LoadUserConfig() UserConfig {
 	return c
 }
 
+// UserBaseURL is the gateway this machine is set up against.
+//
+// It is not always brewkeg.dev: a user can be pointed at a staging gateway
+// or a self-hosted one, and the base URL they were set up with is the one
+// their key works against. Commands that read or spend that key — usage, the
+// MCP server — have to ask the same gateway the tools are pointed at, or they
+// report another account's numbers.
+//
+// The config file wins over the environment: it is what the user chose, and
+// it is what was written into their tools.
+func UserBaseURL() string {
+	if c := LoadUserConfig(); c.BaseURL != "" {
+		return c.BaseURL
+	}
+	return BaseURL()
+}
+
 // SaveUserConfig writes the config file 0600: it usually holds the key.
 func SaveUserConfig(c UserConfig) error {
 	if err := EnsurePrivateDir(brewkegHome()); err != nil {

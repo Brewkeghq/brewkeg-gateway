@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -162,6 +163,8 @@ type KVSpec struct {
 const (
 	phBaseURL     = "{{baseUrl}}"
 	phBaseURLV1   = "{{baseUrlV1}}"
+	phOrigin      = "{{origin}}"
+	phSelfPath    = "{{selfPath}}"
 	phAPIKey      = "{{apiKey}}"
 	phMainModel   = "{{mainModel}}"
 	phSonnetModel = "{{sonnetModel}}"
@@ -173,6 +176,13 @@ func expand(v string, o Options) string {
 	return strings.NewReplacer(
 		phBaseURL, o.BaseURL,
 		phBaseURLV1, strings.TrimRight(o.BaseURL, "/")+"/v1",
+		// The origin, without a trailing slash. A URL built from it needs
+		// exactly one slash between the host and the path.
+		phOrigin, strings.TrimRight(o.BaseURL, "/"),
+		// This binary's own absolute path. Claude Desktop's managed MCP
+		// servers want an absolute path to an executable, and a bare
+		// "brewkeg" would depend on the PATH the app happened to start with.
+		phSelfPath, SelfPath(),
 		phAPIKey, o.APIKey,
 		phMainModel, o.MainModel,
 		phSonnetModel, o.SonnetModel,
@@ -181,11 +191,20 @@ func expand(v string, o Options) string {
 	).Replace(v)
 }
 
+// SelfPath is the absolute path of this binary, or a bare name when the OS
+// will not say.
+func SelfPath() string {
+	if p, err := os.Executable(); err == nil && p != "" {
+		return p
+	}
+	return "brewkeg"
+}
+
 // DefaultSpec is what the app knows without the network. It matches what the
 // server currently serves, so an offline launch behaves identically.
 func DefaultSpec() Spec {
 	return Spec{
-		Version: 1,
+		Version: 2,
 		Pickers: DefaultPickers(),
 		Targets: []TargetSpec{
 			{
@@ -261,6 +280,36 @@ func DefaultSpec() Spec {
 						// gateway can return ids the account cannot use.
 						{Name: "modelDiscoveryEnabled", Value: "false"},
 						{Name: "inferenceModels", Value: `["{{mainModel}}","{{sonnetModel}}","{{fastModel}}"]`},
+						// The plugin marketplaces. Without this key the app's
+						// Directory → Organization tab says "Your organization
+						// hasn't provided plugins" — the tab is empty because
+						// nothing named a marketplace.
+						//
+						// Ours first, then the public catalogues. See
+						// marketplace.go for why the public ones are named by repo
+						// rather than mirrored by us, and why the managed MCP list
+						// below holds only our own server.
+						{Name: "allowedPluginMarketplaces", Value: desktopMarketplacesValue()},
+						// The brewkeg MCP server, as a local process. The app
+						// starts it; the binary reads the key it already stored,
+						// so no credential is written into any config.
+						{Name: "managedMcpServers", Value: desktopManagedMcpServersValue()},
+						// Import. Settings → Import is closed by default on a
+						// third-party deployment — the page says "Import isn't
+						// enabled for this deployment. Contact your organization's
+						// administrator to turn it on." We are the deployment, and
+						// the answer is yes.
+						//
+						// "enabled" is the whole switch; the key defaults to
+						// false. With it on, the user can import the Claude Code
+						// sessions already on this computer, and a claude.ai export
+						// zip. Pulling straight from claude.ai still needs the
+						// user's own Anthropic sign-in — theirs to give.
+						//
+						// "exportEnabled" is the other half: it lets the app hand
+						// your conversations back out as a zip. It is a separate
+						// switch, so it is set separately.
+						{Name: "claudeAiImport", Value: `{"enabled":true,"exportEnabled":true}`},
 					},
 				}, {
 					// The support directory differs per OS. Paths are all

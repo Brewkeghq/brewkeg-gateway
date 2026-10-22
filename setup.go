@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/brewkeghq/brewkeg-gateway/internal/brewkeg"
 )
@@ -35,7 +36,7 @@ func checklistItems(status []brewkeg.TargetStatus) []choice {
 }
 
 func runSetup(args []string) int {
-	spec, _ := brewkeg.FetchSpec(context.Background(), brewkeg.BaseURL())
+	spec, _ := brewkeg.FetchSpec(context.Background(), brewkeg.UserBaseURL())
 	status := brewkeg.StatusAllFrom(spec)
 
 	var opts brewkeg.Options
@@ -126,7 +127,7 @@ func runSetup(args []string) int {
 	// offline user — and the old code did exactly that.
 	if !disconnectOnly && !hasFlag(args, "--skip-check") {
 		fmt.Println("\n  Testing your key…")
-		res := brewkeg.CheckKey(context.Background(), brewkeg.BaseURL(), opts.APIKey)
+		res := brewkeg.CheckKey(context.Background(), opts.BaseURL, opts.APIKey)
 		fmt.Printf("  %s\n", res.Message)
 		switch {
 		case res.Blocked():
@@ -160,7 +161,14 @@ func runSetup(args []string) int {
 		case r.Removed:
 			fmt.Printf("  ✔ %s disconnected — brewkeg removed from %s\n", r.Label, strings.Join(r.Paths, " + "))
 		case r.Manual != "":
-			fmt.Printf("  ✔ %s is configured by hand in the app:\n", r.Label)
+			// Both, when there is both: the file we wrote, and the step the
+			// app still needs from the user. Printing only "configured by
+			// hand" hides the fact that the file was already written.
+			if len(r.Paths) > 0 {
+				fmt.Printf("  ✔ %s → %s\n", r.Label, strings.Join(r.Paths, " + "))
+			} else {
+				fmt.Printf("  ✔ %s is configured by hand in the app:\n", r.Label)
+			}
 			for _, line := range strings.Split(r.Manual, "\n") {
 				fmt.Println("    " + line)
 			}
@@ -173,7 +181,57 @@ func runSetup(args []string) int {
 		return 1
 	}
 
-	if hints := brewkeg.RestartHintsFor(picked, pathsOf(results)); len(hints) > 0 {
+	// Restart what we changed, so the user does not have to.
+	//
+	// A config file is read once, at launch, so writing it changes nothing
+	// until the app comes back. Telling the user to quit and reopen by hand
+	// works exactly once — the second time they forget, and the app looks
+	// broken while being perfectly configured. The MCP server is started by
+	// the app, so without a restart it never starts at all.
+	restarted := map[string]bool{}
+	for _, r := range brewkeg.Relaunch(brewkeg.RestartAppsFor(changedTargets(results)), 8*time.Second) {
+		switch r.Action {
+		case "restarted":
+			restarted[r.App] = true
+			fmt.Printf("  ✔ %s restarted — it has the new configuration now\n", r.App)
+		case "not running":
+			// Nothing to do: the app was closed, and it will read the new
+			// configuration when the user opens it. Telling them to reopen it
+			// would be asking them to do something they have not started.
+			restarted[r.App] = true
+		case "could not restart":
+			fmt.Fprintf(os.Stderr, "  ✖ %s could not be restarted: %s\n", r.App, r.Detail)
+		}
+	}
+
+	// The marketplace and the MCP server only work if the gateway is serving
+	// them. Say so here, where the user is already looking, rather than
+	// letting them find an empty plugin tab later and blame the setup.
+	if configured(results, "desktop") {
+		opts = opts.WithDefaults()
+		st := brewkeg.CheckMarketplace(context.Background(), opts.BaseURL, opts.APIKey)
+		if st.Served {
+			fmt.Printf("  ✔ Plugin marketplace: %s\n", st.Message)
+		} else {
+			fmt.Fprintf(os.Stderr, "  ⚠ %s\n", st.Message)
+			fmt.Fprintf(os.Stderr, "    Claude Desktop's plugin tab stays empty until the gateway serves it.\n")
+		}
+		fmt.Println("  ✔ MCP server: brewkeg mcp (models, usage, plans) — Claude Desktop starts it")
+		if n := brewkeg.MarketplaceCount(spec); n > 1 {
+			fmt.Printf("  ✔ Plugin catalogue: brewkeg, plus %d public marketplaces\n", n-1)
+		} else {
+			fmt.Println("  ✔ Plugin catalogue: brewkeg")
+		}
+		fmt.Println("    (Figma, Miro, Canva, Notion, Linear, Slack, Sentry, Vercel and the rest)")
+		if brewkeg.LookBin("git") == "" {
+			// The app clones those marketplaces with git. It will say so
+			// itself, but saying it here means the user is not left
+			// wondering why the tab is half empty.
+			fmt.Println("  ⚠ git is not installed — the public marketplaces need it. The app will say so too.")
+		}
+	}
+
+	if hints := restartHints(picked, pathsOf(results), restarted); len(hints) > 0 {
 		fmt.Println("\n  Restart these to pick up the change:")
 		for _, h := range hints {
 			fmt.Printf("    • %s — %s\n", h.What, h.Action)
@@ -197,6 +255,42 @@ func pathsOf(results []brewkeg.ApplyResult) []string {
 		if r.OK {
 			out = append(out, r.Paths...)
 		}
+	}
+	return out
+}
+
+// changedTargets are the targets this run actually wrote to. An app that was
+// already configured to exactly these values is not restarted: restarting it
+// for nothing is the kind of thing that teaches people to distrust the tool.
+func changedTargets(results []brewkeg.ApplyResult) []string {
+	var out []string
+	for _, r := range results {
+		if r.OK && r.Changed {
+			out = append(out, r.ID)
+		}
+	}
+	return out
+}
+
+// configured reports whether a target is now pointed at brewkeg.
+func configured(results []brewkeg.ApplyResult, id string) bool {
+	for _, r := range results {
+		if r.ID == id && r.OK && !r.Removed {
+			return true
+		}
+	}
+	return false
+}
+
+// restartHints drops the hint for an app we restarted ourselves: telling
+// someone to quit and reopen an app that is already open is noise.
+func restartHints(ids []string, changedPaths []string, restarted map[string]bool) []brewkeg.RestartHint {
+	var out []brewkeg.RestartHint
+	for _, h := range brewkeg.RestartHintsFor(ids, changedPaths) {
+		if restarted[h.What] {
+			continue
+		}
+		out = append(out, h)
 	}
 	return out
 }

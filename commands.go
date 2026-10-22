@@ -31,7 +31,7 @@ func runModels(args []string) int {
 
 // loadCatalog fetches the live catalogue, falling back to the built-in list.
 func loadCatalog() (brewkeg.Catalog, bool) {
-	cat, err := brewkeg.FetchCatalog(context.Background(), brewkeg.BaseURL())
+	cat, err := brewkeg.FetchCatalog(context.Background(), brewkeg.UserBaseURL())
 	if err != nil {
 		return brewkeg.DefaultCatalog(), false
 	}
@@ -90,7 +90,7 @@ func runUsage(args []string) int {
 		return 1
 	}
 
-	u, err := brewkeg.FetchUsage(context.Background(), brewkeg.BaseURL(), key, range_)
+	u, err := brewkeg.FetchUsage(context.Background(), brewkeg.UserBaseURL(), key, range_)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "brewkeg: %v\n", err)
 		return 1
@@ -132,7 +132,7 @@ func runLogin(args []string) int {
 	}
 
 	fmt.Println("\n  Checking the key…")
-	res := checkKey(context.Background(), brewkeg.BaseURL(), key)
+	res := checkKey(context.Background(), brewkeg.UserBaseURL(), key)
 	fmt.Printf("  %s\n", res.Message)
 	if res.Rejected {
 		fmt.Fprintln(os.Stderr, "\n  Nothing was saved. Check the key and try again.")
@@ -153,6 +153,32 @@ func runLogin(args []string) int {
 
 	fmt.Printf("\n  ✔ Key saved to %s (%s)\n", brewkeg.KeyStorePath(), brewkeg.MaskKey(key))
 	fmt.Println("  Next:  brewkeg claude        (run Claude Code on brewkeg)")
+	return 0
+}
+
+// runMCP serves the brewkeg MCP server over stdio.
+//
+// Claude Desktop and Claude Code start this themselves; it is not something a
+// person runs by hand. stdout carries protocol messages and nothing else, so
+// every diagnostic goes to stderr.
+func runMCP(args []string) int {
+	base := brewkeg.UserBaseURL()
+	if v := flagValue(args, "--base-url"); v != "" {
+		base = strings.TrimRight(v, "/")
+	}
+	key := resolveKey()
+
+	srv := &brewkeg.MCPServer{
+		BaseURL: base,
+		APIKey:  key,
+		In:      os.Stdin,
+		Out:     os.Stdout,
+		Err:     os.Stderr,
+	}
+	if err := srv.Serve(context.Background()); err != nil {
+		fmt.Fprintf(os.Stderr, "brewkeg mcp: %v\n", err)
+		return 1
+	}
 	return 0
 }
 

@@ -107,3 +107,22 @@ func TestLabelForFallsBackToTheId(t *testing.T) {
 		t.Errorf("unknown id should fall back to itself, got %q", l)
 	}
 }
+
+// The gateway a user's key works against is the one they were set up with,
+// not the default. A staging setup that reported brewkeg.dev's numbers would
+// be worse than no numbers at all.
+func TestUserBaseURLFollowsTheConfigFile(t *testing.T) {
+	withTempHome(t)
+
+	if got := UserBaseURL(); got != BaseURL() {
+		t.Errorf("with no config file, UserBaseURL = %q, want %q", got, BaseURL())
+	}
+
+	cfg := LoadUserConfig()
+	cfg.BaseURL = "https://staging.example/"
+	SaveUserConfig(cfg)
+
+	if got := UserBaseURL(); got != "https://staging.example" {
+		t.Errorf("UserBaseURL = %q, want the configured gateway", got)
+	}
+}

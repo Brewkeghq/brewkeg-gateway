@@ -23,6 +23,7 @@ const usage = `brewkeg — run coding agents and desktop apps on brewkeg models
   brewkeg models                      live model list with prices
   brewkeg doctor                      check key, connectivity, agent versions and updates
   brewkeg usage [--last 7d] [--json]   your token history and estimated cost
+  brewkeg mcp                          MCP server over stdio (Claude Desktop starts it)
   brewkeg update [--check]            update brewkeg itself to the latest release
   brewkeg desktop status              app and connection status
   brewkeg desktop disconnect --all    restore every connection
@@ -79,6 +80,8 @@ func main() {
 		os.Exit(runDoctor(args[1:]))
 	case "usage":
 		os.Exit(runUsage(args[1:]))
+	case "mcp":
+		os.Exit(runMCP(args[1:]))
 	case "update", "upgrade":
 		os.Exit(runUpdate(args[1:]))
 	case "desktop":
