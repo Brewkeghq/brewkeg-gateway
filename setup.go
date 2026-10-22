@@ -9,6 +9,31 @@ import (
 	"github.com/brewkeghq/brewkeg-gateway/internal/brewkeg"
 )
 
+// checklistItems turns the target statuses into the rows the prompt draws.
+//
+// The tick means "brewkeg will manage this", and it starts on what brewkeg
+// already has — not on what merely happens to be installed. Pre-ticking every
+// tool found on the machine made the list read as a list of things already
+// done: the user pressed space on the one tool they actually wanted, which
+// turned it OFF, and the tools they never touched were the ones configured.
+//
+// So the tick starts on the connected tools (a re-run leaves them alone) and
+// adding a tool means ticking it.
+func checklistItems(status []brewkeg.TargetStatus) []choice {
+	var items []choice
+	for _, s := range status {
+		hint := "not detected — will write config anyway"
+		if s.Installed {
+			hint = "found"
+		}
+		if s.Enabled {
+			hint = "found — already connected"
+		}
+		items = append(items, choice{label: s.Label, icon: s.Icon, checked: s.Enabled, hint: hint})
+	}
+	return items
+}
+
 func runSetup(args []string) int {
 	spec, _ := brewkeg.FetchSpec(context.Background(), brewkeg.BaseURL())
 	status := brewkeg.StatusAllFrom(spec)
@@ -34,14 +59,7 @@ func runSetup(args []string) int {
 	fmt.Println("Brewkeg auto-configuration")
 	fmt.Println()
 
-	var items []choice
-	for _, s := range status {
-		hint := "not detected — will write config anyway"
-		if s.Installed {
-			hint = "found"
-		}
-		items = append(items, choice{label: s.Label, checked: s.Installed, hint: hint})
-	}
+	items := checklistItems(status)
 
 	var picked []string
 	if yes {
@@ -59,11 +77,18 @@ func runSetup(args []string) int {
 			// Selecting nothing is a real request when something is already
 			// connected — it means "turn brewkeg off everywhere". Only a no-op
 			// when there was nothing on to begin with.
+			//
+			// It is also the default now that nothing is pre-ticked, so it
+			// asks before it takes everything out.
 			if !brewkeg.AnyEnabled() {
 				fmt.Println("\nNothing selected. Nothing changed.")
 				return 1
 			}
-			fmt.Println("\nNo services selected — disconnecting everything brewkeg currently points at.")
+			if !confirm("No services selected — disconnect brewkeg from every tool it is in?", false) {
+				fmt.Println("\nNothing was changed.")
+				return 1
+			}
+			fmt.Println("\nDisconnecting everything brewkeg currently points at.")
 		}
 		for _, i := range idxs {
 			picked = append(picked, status[i].ID)
