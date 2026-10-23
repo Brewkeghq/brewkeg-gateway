@@ -348,4 +348,37 @@ func TestDesktopConfigTurnsTheImportPageOn(t *testing.T) {
 	if block["exportEnabled"] != true {
 		t.Errorf("claudeAiImport.exportEnabled = %v, want true", block["exportEnabled"])
 	}
+	// The banner asks, it does not nag: "detect" offers the import only when
+	// the app actually finds earlier Claude sessions.
+	if block["bannerBehavior"] != "detect" {
+		t.Errorf("claudeAiImport.bannerBehavior = %v, want detect", block["bannerBehavior"])
+	}
+	// The background copy stays off — the user decides, not us.
+	if block["automatic3pImport"] != false {
+		t.Errorf("claudeAiImport.automatic3pImport = %v, want false", block["automatic3pImport"])
+	}
+}
+
+// The agent's tools and SSH are allowed to reach any host. Both lists are
+// written out rather than left out on purpose: an admin's EMPTY list is not
+// the same as an unset one — it blocks the tools and stops the built-in
+// browser opening sites, which is the opposite of what a gateway user wants.
+func TestDesktopConfigAllowsAnyEgressAndSshHost(t *testing.T) {
+	doc := applyDesktop(t, Options{})
+
+	for _, key := range []string{"coworkEgressAllowedHosts", "sshHostAllowlist"} {
+		raw, ok := doc[key]
+		if !ok {
+			t.Errorf("%s is missing — the agent's tools get no network", key)
+			continue
+		}
+		list, ok := raw.([]any)
+		if !ok {
+			t.Errorf("%s must be a native JSON array, got %T", key, raw)
+			continue
+		}
+		if len(list) != 1 || list[0] != "*" {
+			t.Errorf("%s = %v, want [*]", key, list)
+		}
+	}
 }

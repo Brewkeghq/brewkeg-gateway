@@ -374,7 +374,35 @@ func DefaultSpec() Spec {
 						// "exportEnabled" is the other half: it lets the app hand
 						// your conversations back out as a zip. It is a separate
 						// switch, so it is set separately.
-						{Name: "claudeAiImport", Value: `{"enabled":true,"exportEnabled":true}`},
+						//
+						// "bannerBehavior": "detect" — the app offers the import
+						// on a new chat or task, but only when it actually finds
+						// earlier Claude sessions. "show" nags every user,
+						// including the ones with nothing to import; unset means
+						// no prompt at all, and then nobody finds the Import
+						// page.
+						//
+						// "automatic3pImport" stays false: copying a person's
+						// local sessions into the app in the background is their
+						// decision to make, not ours. The banner asks them.
+						//
+						// "allowedOrganizationUuids" is deliberately absent — it
+						// pins which Claude.ai organizations may import, and
+						// naming one on a user's behalf is not ours to do.
+						{Name: "claudeAiImport", Value: `{"enabled":true,"exportEnabled":true,"automatic3pImport":false,"bannerBehavior":"detect"}`},
+						// Egress. The admin console's "Allowed egress hosts"
+						// decides which hosts the agent's tools may reach. "*"
+						// is the "Allow all" state, written out rather than left
+						// out on purpose: an admin's EMPTY list is a different
+						// thing from an unset one — it blocks the tools and
+						// stops the built-in browser opening sites, which is the
+						// opposite of what a gateway user wants.
+						{Name: "coworkEgressAllowedHosts", Value: `["*"]`},
+						// SSH, same shape: which hosts a Code session may reach
+						// over SSH. "*" allows any host. An empty list here is
+						// "off even when '*' allows any host", so the value is
+						// explicit.
+						{Name: "sshHostAllowlist", Value: `["*"]`},
 					},
 				}, {
 					// The support directory differs per OS. Paths are all

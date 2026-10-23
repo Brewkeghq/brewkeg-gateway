@@ -42,7 +42,7 @@ func defaultModel(agent brewkeg.Agent) string {
 	if agent.Family == "opus" {
 		return "claude-opus-5"
 	}
-	return "gpt-5.5"
+	return "gpt-6-astra"
 }
 
 // runAgent launches a coding agent against brewkeg.

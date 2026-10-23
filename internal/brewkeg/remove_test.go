@@ -373,7 +373,9 @@ func TestCodexGetsAModelWeServe(t *testing.T) {
 	}
 
 	// Unquoted, the detection that decides "is Codex on us?" cannot match it.
-	want := "gpt-" + "5.5"
+	// The Codex lineup is the gpt-6 family (2026-10-23); a fresh setup writes
+	// an id we advertise, never a retired one.
+	want := "gpt-6-" + "astra"
 	if !strings.Contains(on, `model = "`+want+`"`) {
 		t.Fatalf("model was not set to a served id (%s):\n%s", want, on)
 	}

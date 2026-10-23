@@ -36,7 +36,10 @@ func (o Options) WithDefaults() Options {
 		o.MainModel = "claude-opus-5"
 	}
 	if o.CodexModel == "" {
-		o.CodexModel = "gpt-5.5"
+		// The gpt-6 family is what brewkeg carries (2026-10-23). The older
+		// gpt-5.x ids still work — the gateway routes them to their
+		// replacement — but a fresh setup should write an id we advertise.
+		o.CodexModel = "gpt-6-astra"
 	}
 	if o.SonnetModel == "" {
 		o.SonnetModel = "claude-sonnet-5"
