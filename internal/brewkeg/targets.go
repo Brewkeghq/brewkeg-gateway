@@ -196,6 +196,8 @@ func (t specTarget) Apply(b *Backup, o Options) (string, error) {
 			err = writeTOMLProvider(path, f.Entries, o, rootKeysOf(t.spec.Enabled))
 		case "zcode-provider":
 			err = WriteZCodeProvider(path, o, t.spec.Models)
+		case "opencode-provider":
+			err = WriteOpenCodeProvider(path, o, t.spec.Models)
 		default:
 			err = fmt.Errorf("unknown file kind %q in spec", f.Kind)
 		}
@@ -238,27 +240,16 @@ func (t specTarget) Apply(b *Backup, o Options) (string, error) {
 	return strings.Join(written, " + "), nil
 }
 
-// applyTarget writes a target's config, then its model picker. The picker is a
-// separate write because it targets a tool's model catalogue rather than its
-// connection settings, and it must survive a config file that the tool rewrites.
-func applyTarget(t Target, s Spec, b *Backup, opts Options) (string, error) {
+// applyTarget writes a target's connection config and nothing else.
+//
+// It used to follow that with a model-picker write into the same settings file.
+// It no longer does: the picker belongs to the user, and connecting a gateway
+// is not a reason to rewrite the list of models their tool offers. See
+// picker.go.
+func applyTarget(t Target, b *Backup, opts Options) (string, error) {
 	path, err := t.Apply(b, opts)
 	if err != nil {
 		return "", err
-	}
-	if p, ok := s.Pickers[t.ID()]; ok && len(p.Options) > 0 {
-		pp := resolvePath(p.Path)
-		if err := b.Capture(t.ID(), pp); err != nil {
-			return "", err
-		}
-		if err := applyPicker(pp, p); err != nil {
-			return "", err
-		}
-		if path != "" && !strings.Contains(path, pp) {
-			path = path + " + " + pp
-		} else if path == "" {
-			path = pp
-		}
 	}
 	return path, nil
 }
@@ -436,11 +427,15 @@ func enabledFor(t Target, s Spec) bool {
 		if e.ZCodeProvider != "" && ZCodePointsAtBrewkeg(resolvePath(e.ZCodeProvider)) {
 			return true
 		}
-		// The picker is a separate write to the same file, so a tool can be
-		// configured through it alone — which is exactly the state a restore
-		// that missed the picker leaves behind. Without this the switch reads
-		// off, eviction skips it, and a reset leaves the rows in place.
-		if p, ok := s.Pickers[ts.ID]; ok && PickerInstalled(resolvePath(p.Path)) {
+		if e.OpenCodeProvider != "" && OpenCodePointsAtBrewkeg(resolvePath(e.OpenCodeProvider)) {
+			return true
+		}
+		// A picker block we wrote is not something we write any more, but an
+		// install from before that change can still carry one, and it is the
+		// only mark left if a restore missed the env keys. Without this the
+		// switch reads off, eviction skips the tool, and a reset leaves
+		// brewkeg's rows in the user's picker.
+		if PickerInstalled(resolvePath(claudeCLISettingsPath)) {
 			return true
 		}
 		return false
@@ -511,7 +506,7 @@ func ApplyWithSpec(s Spec, ids []string, opts Options) (*Backup, []ApplyResult, 
 			continue
 		}
 		r := ApplyResult{ID: t.ID(), Label: t.Label()}
-		path, err := applyTarget(t, s, b, opts)
+		path, err := applyTarget(t, b, opts)
 		if err != nil {
 			r.Error = err.Error()
 			results = append(results, r)

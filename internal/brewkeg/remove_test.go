@@ -241,30 +241,48 @@ name = "other"
 	}
 }
 
-// A picker we installed is advertising models from a gateway that has just been
-// switched off. Leaving it in place is the quiet failure mode: the tool looks
-// configured and answers with a model the user just disconnected.
-func TestEvictRemovesThePickerWeInstalled(t *testing.T) {
+// brewkeg no longer writes model pickers, but an install from before that
+// change still carries one, and it is advertising models from a gateway that
+// has just been switched off. Leaving it is the quiet failure mode: the tool
+// looks configured and answers with a model the user just disconnected.
+func TestEvictRemovesTheLegacyPickerWeInstalled(t *testing.T) {
 	withTempHome(t)
 
 	path := filepath.Join(os.Getenv("HOME"), ".claude", "settings.json")
-	writeFile(t, path, "{}\n")
+	// Written the way the old app wrote it: a brewkeg-labelled option.
+	writeFile(t, path, `{"modelPicker":{"replaceBuiltInOptions":true,"options":[`+
+		`{"model":"claude-opus-5","label":"Opus 5 · brewkeg"}]}}`+"\n")
 
-	spec := DefaultSpec()
-	spec.Pickers = map[string]ModelPickerSpec{
-		"claude-cli": {Path: ".claude/settings.json", Replace: true, Options: []PickerOption{{Model: "claude-opus-5"}}},
-	}
-	if _, _, err := ApplyWithSpec(spec, []string{"claude-cli"}, Options{APIKey: "bk_live_K"}); err != nil {
+	if _, _, err := ApplyWithSpec(DefaultSpec(), []string{"claude-cli"}, Options{APIKey: "bk_live_K"}); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(readFile(t, path), "modelPicker") {
-		t.Fatal("picker was not written")
-	}
-	if _, _, err := ApplyWithSpec(spec, nil, Options{}); err != nil {
+	if _, _, err := ApplyWithSpec(DefaultSpec(), nil, Options{}); err != nil {
 		t.Fatal(err)
 	}
 	if got := readFile(t, path); strings.Contains(got, "modelPicker") || strings.Contains(got, "claude-opus-5") {
-		t.Fatalf("picker survived a disconnect:\n%s", got)
+		t.Fatalf("legacy picker survived a disconnect:\n%s", got)
+	}
+}
+
+// The flip side: a picker the user wrote is theirs. Disconnecting is not
+// permission to delete their model list, so cleanup must check the label
+// before it touches anything.
+func TestEvictKeepsTheUsersOwnPicker(t *testing.T) {
+	withTempHome(t)
+
+	path := filepath.Join(os.Getenv("HOME"), ".claude", "settings.json")
+	before := `{"modelPicker":{"replaceBuiltInOptions":false,"options":[` +
+		`{"model":"corporate-sonnet-v1","label":"Company Sonnet"}]}}` + "\n"
+	writeFile(t, path, before)
+
+	if _, _, err := ApplyWithSpec(DefaultSpec(), []string{"claude-cli"}, Options{APIKey: "bk_live_K"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := ApplyWithSpec(DefaultSpec(), nil, Options{}); err != nil {
+		t.Fatal(err)
+	}
+	if got := readFile(t, path); !strings.Contains(got, "corporate-sonnet-v1") {
+		t.Fatalf("the user's own picker was deleted:\n%s", got)
 	}
 }
 

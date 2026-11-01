@@ -47,7 +47,9 @@ type zcodeDoc struct {
 	Config        map[string]any `json:"config"`
 }
 
-func loadZCode(path string) (map[string]any, error) {
+// loadJSONDoc reads a JSON config, treating a missing or empty file as {}. It is
+// shared by every editor that owns a whole JSON document (ZCode, OpenCode).
+func loadJSONDoc(path string) (map[string]any, error) {
 	doc := map[string]any{}
 	raw := ReadFile(path)
 	if strings.TrimSpace(raw) == "" {
@@ -116,7 +118,7 @@ func findRule(rules []any, field, want string) int {
 // its list is the whole served catalogue; an empty list falls back to the
 // three defaults below.
 func WriteZCodeProvider(path string, o Options, models []string) error {
-	doc, err := loadZCode(path)
+	doc, err := loadJSONDoc(path)
 	if err != nil {
 		return err
 	}
@@ -232,7 +234,7 @@ func WriteZCodeProvider(path string, o Options, models []string) error {
 // RemoveZCodeProvider takes brewkeg back out, leaving every other provider and
 // every other model rule alone.
 func RemoveZCodeProvider(path string) (bool, error) {
-	doc, err := loadZCode(path)
+	doc, err := loadJSONDoc(path)
 	if err != nil {
 		return false, err
 	}
@@ -317,7 +319,7 @@ func RemoveZCodeProvider(path string) (bool, error) {
 // identify a provider by `id`; modelConfigRules.providerModelRules identify it
 // by `providerId`. Both are checked, and either spelling is accepted.
 func ZCodePointsAtBrewkeg(path string) bool {
-	doc, err := loadZCode(path)
+	doc, err := loadJSONDoc(path)
 	if err != nil {
 		return false
 	}

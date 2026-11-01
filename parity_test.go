@@ -44,13 +44,8 @@ func TestClaudeSettingsJSON(t *testing.T) {
 		t.Fatalf("claudeSettingsJSON: %v", err)
 	}
 	var doc struct {
-		Env         map[string]string `json:"env"`
-		ModelPicker struct {
-			Replace bool `json:"replaceBuiltInOptions"`
-			Options []struct {
-				Model string `json:"model"`
-			} `json:"options"`
-		} `json:"modelPicker"`
+		Env   map[string]string `json:"env"`
+		Extra map[string]json.RawMessage
 	}
 	if err := json.Unmarshal(raw, &doc); err != nil {
 		t.Fatalf("the settings file is not valid JSON: %v", err)
@@ -64,21 +59,26 @@ func TestClaudeSettingsJSON(t *testing.T) {
 	if _, ok := doc.Env["ANTHROPIC_API_KEY"]; ok {
 		t.Error("ANTHROPIC_API_KEY must not be set at all, not even empty")
 	}
-	if doc.Env["ANTHROPIC_DEFAULT_OPUS_MODEL"] != "claude-opus-5" {
-		t.Errorf("opus = %q", doc.Env["ANTHROPIC_DEFAULT_OPUS_MODEL"])
+	if doc.Env["ANTHROPIC_MODEL"] != "claude-opus-5" {
+		t.Errorf("model = %q", doc.Env["ANTHROPIC_MODEL"])
 	}
 	if doc.Env["ANTHROPIC_SMALL_FAST_MODEL"] != "claude-haiku-4-5" {
 		t.Errorf("fast = %q", doc.Env["ANTHROPIC_SMALL_FAST_MODEL"])
 	}
-	if !doc.ModelPicker.Replace {
-		t.Error("the picker must replace the built-in options")
+
+	// The picker is the user's. `brewkeg launch` sets an endpoint and a model
+	// for the session; it does not get to rewrite the list of models the tool
+	// offers, and it does not get to retarget the built-in rows either.
+	var top map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &top); err != nil {
+		t.Fatal(err)
 	}
-	if len(doc.ModelPicker.Options) != 2 {
-		t.Fatalf("picker options = %d, want 2 (claude models only)", len(doc.ModelPicker.Options))
+	if _, ok := top["modelPicker"]; ok {
+		t.Errorf("launch wrote a modelPicker block:\n%s", raw)
 	}
-	for _, o := range doc.ModelPicker.Options {
-		if strings.HasPrefix(o.Model, "gpt-") {
-			t.Errorf("the Claude Code picker must not offer %q", o.Model)
+	for key := range doc.Env {
+		if strings.HasPrefix(key, "ANTHROPIC_DEFAULT_") {
+			t.Errorf("launch set %s, which retargets a built-in picker row", key)
 		}
 	}
 }

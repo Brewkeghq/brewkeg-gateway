@@ -202,6 +202,11 @@ func removePickerKey(path string) (bool, error) {
 	if _, ok := doc["modelPicker"]; !ok {
 		return false, nil
 	}
+	// Only ours. A picker the user wrote themselves is theirs to keep, and
+	// disconnecting a gateway is not permission to delete their rows.
+	if !PickerInstalled(path) {
+		return false, nil
+	}
 	delete(doc, "modelPicker")
 	out, err := json.MarshalIndent(doc, "", "  ")
 	if err != nil {
@@ -213,7 +218,7 @@ func removePickerKey(path string) (bool, error) {
 // removeTarget is the inverse of applyTarget: same file discovery, same
 // backup-before-write ordering, one remover per file kind. It reports the files
 // it changed so the docket can show a removal, not just an addition.
-func removeTarget(t Target, s Spec, b *Backup) (string, error) {
+func removeTarget(t Target, b *Backup) (string, error) {
 	st, ok := t.(specTarget)
 	if !ok {
 		return "", nil
@@ -256,6 +261,8 @@ func removeTarget(t Target, s Spec, b *Backup) (string, error) {
 			changed, err = removeTOMLProvider(path, rootKeysOf(st.spec.Enabled))
 		case "zcode-provider":
 			changed, err = RemoveZCodeProvider(path)
+		case "opencode-provider":
+			changed, err = RemoveOpenCodeProvider(path)
 		default:
 			return "", fmt.Errorf("unknown file kind %q in spec", f.Kind)
 		}
@@ -267,14 +274,15 @@ func removeTarget(t Target, s Spec, b *Backup) (string, error) {
 		}
 	}
 
-	if p, ok := s.Pickers[t.ID()]; ok {
-		pp := resolvePath(p.Path)
-		if err := b.Capture(t.ID(), pp); err == nil {
-			if changed, err := removePickerKey(pp); err != nil {
-				return "", err
-			} else if changed {
-				touched = append(touched, pp)
-			}
+	// Clean up a picker we wrote before we stopped writing them. Not driven by
+	// the spec: the spec has no pickers any more, and an install that needs
+	// cleaning is one whose settings file we can name directly.
+	pp := resolvePath(claudeCLISettingsPath)
+	if err := b.Capture(t.ID(), pp); err == nil {
+		if changed, err := removePickerKey(pp); err != nil {
+			return "", err
+		} else if changed {
+			touched = append(touched, pp)
 		}
 	}
 
@@ -318,7 +326,7 @@ func evictTargets(s Spec, wanted map[string]bool, b *Backup) []ApplyResult {
 			continue
 		}
 		r := ApplyResult{ID: ts.ID, Label: ts.Label}
-		path, err := removeTarget(t, s, b)
+		path, err := removeTarget(t, b)
 		if err != nil {
 			r.Error = err.Error()
 			out = append(out, r)

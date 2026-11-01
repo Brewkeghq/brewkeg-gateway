@@ -24,11 +24,10 @@ import (
 type Spec struct {
 	Version int          `json:"version"`
 	Targets []TargetSpec `json:"targets"`
-	// Pickers replaces the model picker of a tool. Kept beside the targets
-	// rather than inside them because a picker is a catalogue, not a config
-	// edit: it lists every model brewkeg serves, which changes far more often
-	// than the shape of any tool's config file.
-	Pickers map[string]ModelPickerSpec `json:"pickers,omitempty"`
+	// There is deliberately no `pickers` field. The server still publishes one
+	// for installs that predate this, and an older app still honours it — but
+	// this engine never writes a model picker, so it never reads one either.
+	// See picker.go for why.
 }
 
 // ManualStep is a block of instructions that only applies in some states.
@@ -126,6 +125,10 @@ type EnabledSpec struct {
 	// when that registry names our providerId. A dedicated field because the
 	// registry is two nested arrays of rule objects — no flat key scan finds it.
 	ZCodeProvider string `json:"zcodeProvider,omitempty"`
+	// OpenCodeProvider is the path of OpenCode's config. The tool is on when
+	// providers.brewkeg exists there — nested one level down, which is why the
+	// top-level JSONFileKeys scan cannot see it.
+	OpenCodeProvider string `json:"opencodeProvider,omitempty"`
 	// NeverDetectable is for GUI-only tools whose config we cannot read.
 	NeverDetectable bool `json:"neverDetectable,omitempty"`
 }
@@ -144,6 +147,8 @@ type FileSpec struct {
 	//   json-plain   — merge top-level keys of a JSON file
 	//   shell-block  — a marked block of exports in an rc file
 	//   toml-provider— a marked block, or an in-place edit of the table
+	//   zcode-provider — ZCode's nested provider registry
+	//   opencode-provider — OpenCode's providers.brewkeg entry
 	Kind string `json:"kind"`
 	// Entries are the individual key/value pairs to write. One shape for all
 	// three kinds: an env var name in json-env and shell-block, a TOML key in
@@ -270,7 +275,6 @@ func SelfPath() string {
 func DefaultSpec() Spec {
 	return Spec{
 		Version: 2,
-		Pickers: DefaultPickers(),
 		Targets: []TargetSpec{
 			{
 				ID: "claude-cli", Label: "Claude Code", Icon: "anthropic",
@@ -310,6 +314,20 @@ func DefaultSpec() Spec {
 						{Name: "experimental_bearer_token", Value: `"{{apiKey}}"`},
 					}},
 				},
+			},
+			{
+				// The open-source terminal agent. One JSON file holds its
+				// providers on every OS, so it is a single write.
+				ID: "opencode", Label: "OpenCode", Icon: "openai",
+				Detect: DetectSpec{
+					Dirs: []string{".config/opencode"},
+					Bins: []string{"opencode"},
+				},
+				Enabled: EnabledSpec{OpenCodeProvider: OpenCodeConfigPath},
+				Files: []FileSpec{{
+					Path: OpenCodeConfigPath,
+					Kind: "opencode-provider",
+				}},
 			},
 			{
 				ID: "desktop", Label: "Claude Desktop", Icon: "anthropic",
@@ -511,31 +529,6 @@ func FetchSpec(ctx context.Context, baseURL string) (Spec, error) {
 		return DefaultSpec(), fmt.Errorf("server spec v%d is older than the built-in v%d", spec.Version, DefaultSpec().Version)
 	}
 	return spec, nil
-}
-
-// DefaultPickers replaces Claude Code's model picker with brewkeg's catalogue.
-// Kept in step with what the server serves; the server's copy wins when it is
-// reachable, so the two can never disagree about which models exist.
-//
-// The Claude family and nothing else: Claude Code speaks the Anthropic
-// protocol, and a picker full of models the tool cannot run is a list
-// nobody should be shown. The server drops a retired id (claude-haiku-4-5
-// retired on 2026-10-15), and this offline copy cannot know the date, so it
-// is the server's list that is the authority.
-func DefaultPickers() map[string]ModelPickerSpec {
-	return map[string]ModelPickerSpec{
-		"claude-cli": {
-			Path:    ".claude/settings.json",
-			Replace: true,
-			Options: []PickerOption{
-				{Model: "claude-fable-5", Label: "Fable 5 · brewkeg", Description: "Deepest work on hard codebases · 1M context"},
-				{Model: "claude-opus-5-5", Label: "Opus 5.5 · brewkeg", Description: "Deepest work on hard codebases · 1M context"},
-				{Model: "claude-opus-5", Label: "Opus 5 · brewkeg", Description: "Deepest work on hard codebases · 1M context"},
-				{Model: "claude-sonnet-5-5", Label: "Sonnet 5.5 · brewkeg", Description: "Everyday coding · 1M context"},
-				{Model: "claude-sonnet-5", Label: "Sonnet 5 · brewkeg", Description: "Everyday coding · 1M context"},
-			},
-		},
-	}
 }
 
 // claudeEnvEntries are the variables that point Claude Code at brewkeg.

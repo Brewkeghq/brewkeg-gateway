@@ -133,9 +133,10 @@ func TestSpecIsTheOnlyPlacePathsAndKeysLive(t *testing.T) {
 	}
 }
 
-// The picker block lives inside a settings file that also holds env, hooks and
-// permissions. Replacing the picker must not disturb any of them.
-func TestPickerReplacesOptionsAndKeepsEverythingElse(t *testing.T) {
+// A settings file also holds env, hooks, permissions — and, if the user put one
+// there, a modelPicker. Connecting a gateway writes the env and leaves all of
+// that exactly as it was.
+func TestClaudeCLILeavesTheUsersPickerAlone(t *testing.T) {
 	h := home(t)
 	settings := filepath.Join(h, ".claude", "settings.json")
 	before := `{
@@ -155,16 +156,6 @@ func TestPickerReplacesOptionsAndKeepsEverythingElse(t *testing.T) {
 	}
 
 	spec := DefaultSpec()
-	spec.Pickers = map[string]ModelPickerSpec{
-		"claude-cli": {
-			Path:    ".claude/settings.json",
-			Replace: true,
-			Options: []PickerOption{
-				{Model: "claude-opus-5", Label: "Opus 5 · brewkeg", Description: "200K context"},
-				{Model: "claude-haiku-4-5", Label: "Haiku 4.5 · brewkeg"},
-			},
-		},
-	}
 
 	b, _, err := ApplyWithSpec(spec, []string{"claude-cli"}, Options{APIKey: "bk_live_K"})
 	if err != nil {
@@ -177,42 +168,44 @@ func TestPickerReplacesOptionsAndKeepsEverythingElse(t *testing.T) {
 			t.Errorf("picker write lost %q:\n%s", keep, got)
 		}
 	}
-	if strings.Contains(got, "corporate-sonnet-v1") {
-		t.Errorf("the old picker option should be gone when replace is true:\n%s", got)
+	// The user's rows, their label and their replaceBuiltInOptions flag all
+	// survive verbatim. Rewriting this block is the thing we stopped doing.
+	if !strings.Contains(got, "corporate-sonnet-v1") {
+		t.Errorf("the user's own picker row was dropped:\n%s", got)
 	}
-	if !strings.Contains(got, `"replaceBuiltInOptions": true`) {
-		t.Errorf("replaceBuiltInOptions should be set:\n%s", got)
+	if !strings.Contains(got, "Company Sonnet") {
+		t.Errorf("the user's own picker label was dropped:\n%s", got)
 	}
-	if n := strings.Count(got, `"model":`); n != 2 {
-		t.Errorf("expected exactly the 2 brewkeg options, got %d:\n%s", n, got)
+	if !strings.Contains(got, `"replaceBuiltInOptions": false`) {
+		t.Errorf("the user's own replaceBuiltInOptions was changed:\n%s", got)
+	}
+	if strings.Contains(got, "· brewkeg") {
+		t.Errorf("brewkeg wrote picker rows of its own:\n%s", got)
 	}
 
 	if _, err := b.Restore(false); err != nil {
 		t.Fatal(err)
 	}
 	if after := ReadFile(settings); after != before {
-		t.Errorf("restore should put the original picker back:\n got: %s\nwant: %s", after, before)
+		t.Errorf("restore should be a no-op here:\n got: %s\nwant: %s", after, before)
 	}
 }
 
-// A picker with no options must not wipe the user's list.
-func TestEmptyPickerLeavesFileAlone(t *testing.T) {
+// A file with no picker must not gain one.
+func TestConnectDoesNotCreateAPicker(t *testing.T) {
 	h := home(t)
 	settings := filepath.Join(h, ".claude", "settings.json")
-	before := `{"modelPicker":{"options":[{"model":"mine"}]}}`
 	if err := os.MkdirAll(filepath.Dir(settings), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(settings, []byte(before), 0o644); err != nil {
+	if err := os.WriteFile(settings, []byte(`{"theme":"dark"}`+"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	spec := DefaultSpec()
-	spec.Pickers = map[string]ModelPickerSpec{"claude-cli": {Path: ".claude/settings.json", Replace: true}}
-	if _, _, err := ApplyWithSpec(spec, []string{"claude-cli"}, Options{APIKey: "bk_live_K"}); err != nil {
+	if _, _, err := ApplyWithSpec(DefaultSpec(), []string{"claude-cli"}, Options{APIKey: "bk_live_K"}); err != nil {
 		t.Fatal(err)
 	}
-	if got := ReadFile(settings); !strings.Contains(got, "mine") {
-		t.Errorf("an empty picker must not clear the user's options:\n%s", got)
+	if got := ReadFile(settings); strings.Contains(got, "modelPicker") {
+		t.Errorf("connecting invented a picker:\n%s", got)
 	}
 }
 

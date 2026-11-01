@@ -177,50 +177,25 @@ func claudeLaunch(s session, rest []string) (launch, error) {
 }
 
 // claudeSettingsJSON is the settings file Claude Code reads for this session:
-// the gateway, the key, and a model picker holding brewkeg's catalogue.
+// where the gateway is, what key to use, and which model to run.
+//
+// It carries no `modelPicker`. Rewriting that block replaced the user's own
+// rows — every model they already had, gone, on a plain `brewkeg launch` — and
+// the ANTHROPIC_DEFAULT_<FAMILY>_* variables are the same edit wearing a
+// different hat: they retarget and relabel the rows of the built-in picker.
+// Neither belongs in a launcher. The picker is the user's; we set the endpoint,
+// the credential and the model for this session, and leave the list alone.
 func claudeSettingsJSON(s session) ([]byte, error) {
 	env := map[string]string{
-		"ANTHROPIC_BASE_URL":      s.BaseURL,
-		"ANTHROPIC_AUTH_TOKEN":    s.APIKey,
-		"ANTHROPIC_MODEL":         s.Model,
-		"ANTHROPIC_DEFAULT_MODEL": s.Model,
+		"ANTHROPIC_BASE_URL":   s.BaseURL,
+		"ANTHROPIC_AUTH_TOKEN": s.APIKey,
+		"ANTHROPIC_MODEL":      s.Model,
 	}
 	if fast, ok := s.Catalog.ClaudeFamily("haiku"); ok {
 		env["ANTHROPIC_SMALL_FAST_MODEL"] = fast.ID
 	}
-	for _, fam := range []string{"fable", "opus", "sonnet", "haiku"} {
-		m, ok := s.Catalog.ClaudeFamily(fam)
-		if !ok {
-			continue
-		}
-		key := "ANTHROPIC_DEFAULT_" + strings.ToUpper(fam) + "_MODEL"
-		env[key] = m.ID
-		env[key+"_NAME"] = m.ID + " · brewkeg"
-		env[key+"_DESCRIPTION"] = m.ID
-	}
 
-	opts := make([]any, 0, len(s.Catalog.Models))
-	for _, m := range s.Catalog.Models {
-		if !strings.HasPrefix(m.ID, "claude-") {
-			continue
-		}
-		opts = append(opts, map[string]any{
-			"model": m.ID,
-			"label": m.ID + " · brewkeg",
-			"description": fmt.Sprintf(
-				"brewkeg · %dK context · $%.2f in / $%.2f out per 1M tokens.",
-				m.ContextWindow/1000, m.InputUSD, m.OutputUSD,
-			),
-		})
-	}
-
-	doc := map[string]any{
-		"env": env,
-		"modelPicker": map[string]any{
-			"replaceBuiltInOptions": true,
-			"options":               opts,
-		},
-	}
+	doc := map[string]any{"env": env}
 	return json.MarshalIndent(doc, "", "  ")
 }
 

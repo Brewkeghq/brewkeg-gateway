@@ -62,6 +62,7 @@ brewkeg reset                 # disconnect everything, clear caches, forget the 
 |---|---|
 | Claude Code | `~/.claude/settings.json` (`env`, merged) + exports in your shell rc |
 | Codex | `~/.codex/config.toml` — `[model_providers.brewkeg]` |
+| OpenCode | `~/.config/opencode/opencode.json` — `providers.brewkeg` |
 | ZCode | `~/.zcode/v2/provider_config.json` |
 | Claude Desktop | `~/Library/Application Support/Claude-3p/configLibrary/` |
 
