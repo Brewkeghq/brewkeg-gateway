@@ -22,6 +22,18 @@ MANIFEST_URL="${BREWKEG_MANIFEST_URL:-https://github.com/${REPO}/releases/latest
 say() { printf '%s\n' "$*"; }
 die() { printf 'error: %s\n' "$*" >&2; exit 1; }
 
+# Every fetch carries a deadline. Without one, a connection that opens and then
+# goes quiet hangs the installer forever: no output, no error, nothing to press
+# — and `curl -fsSL` alone has no timeout of any kind. A stalled manifest or
+# API call now gives up in a minute and the installer moves on; the binaries
+# are allowed longer because they are megabytes, not kilobytes.
+#
+# `--retry` covers the transient failures (timeouts, 5xx, 429) that a flaky
+# connection produces. It does not cover 404 — the app archive is attached by a
+# job that runs after this one, so a 404 there must stay a fast, quiet "not yet".
+fetch()    { curl -fsSL --connect-timeout 10 --max-time 60  --retry 2 --retry-delay 1 "$@"; }
+download() { curl -fsSL --connect-timeout 10 --max-time 300 --retry 2 --retry-delay 1 "$@"; }
+
 want_cli=1
 want_app=1
 for arg in "$@"; do
@@ -74,7 +86,7 @@ trap 'rm -rf "$tmp"' EXIT
 version=""
 tag=""
 asset=""
-if manifest=$(curl -fsSL "$MANIFEST_URL" 2>/dev/null); then
+if manifest=$(fetch "$MANIFEST_URL" 2>/dev/null); then
   version=$(printf '%s\n' "$manifest" | sed -n 's/^version=//p' | head -n1)
   tag=$(printf '%s\n' "$manifest" | sed -n 's/^tag=//p' | head -n1)
   asset=$(printf '%s\n' "$manifest" | sed -n "s/^asset_${os}_${arch}=//p" | head -n1)
@@ -82,7 +94,7 @@ fi
 
 if [ -z "$version" ] || [ -z "$asset" ]; then
   say "→ no install manifest, falling back to the GitHub API"
-  tag=$(curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest" \
+  tag=$(fetch "https://api.github.com/repos/${REPO}/releases/latest" \
     | sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n1)
   [ -n "$tag" ] || die "could not read the latest release from GitHub"
   version=$(printf '%s' "$tag" | sed 's/^cli-//; s/^v//')
@@ -96,7 +108,7 @@ sums="$base/brewkeg_${version}_checksums.txt"
 
 # One fetch, used by both the CLI and the app.
 have_sums=0
-if curl -fsSL "$sums" -o "$tmp/sums" 2>/dev/null && [ -s "$tmp/sums" ]; then
+if fetch "$sums" -o "$tmp/sums" 2>/dev/null && [ -s "$tmp/sums" ]; then
   have_sums=1
 fi
 
@@ -111,7 +123,7 @@ sha256_of() {
 # ── the CLI ────────────────────────────────────────────────────────────────
 if [ "$want_cli" = 1 ]; then
   say "→ fetching brewkeg ${version} for ${os}/${arch}"
-  curl -fsSL "$base/$asset" -o "$tmp/brewkeg" || die "download failed: $base/$asset"
+  download "$base/$asset" -o "$tmp/brewkeg" || die "download failed: $base/$asset"
   chmod +x "$tmp/brewkeg"
 
   if [ "$have_sums" = 1 ]; then
@@ -139,11 +151,11 @@ app_installed=0
 if [ "$want_app" = 1 ]; then
   say ""
   say "→ fetching $APP_NAME ${version} for ${os}"
-  if curl -fsSL "$base/$app_asset" -o "$tmp/app.$app_ext" 2>/dev/null; then
+  if download "$base/$app_asset" -o "$tmp/app.$app_ext" 2>/dev/null; then
     # The app's checksum lives beside it, published by the desktop job. The
     # release's checksums.txt cannot carry it: three runners would race to
     # append to it.
-    if curl -fsSL "$base/$app_asset.sha256" -o "$tmp/app.sha256" 2>/dev/null && [ -s "$tmp/app.sha256" ]; then
+    if fetch "$base/$app_asset.sha256" -o "$tmp/app.sha256" 2>/dev/null && [ -s "$tmp/app.sha256" ]; then
       expected=$(awk '{print $1}' "$tmp/app.sha256" | head -n1)
       [ -n "$expected" ] || die "empty checksum for $app_asset"
       [ "$expected" = "$(sha256_of "$tmp/app.$app_ext")" ] || die "checksum mismatch on $app_asset — refusing to install"

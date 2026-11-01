@@ -99,30 +99,50 @@ jobs:
       # Served from a stable URL — `releases/latest/download/latest.txt` —
       # which GitHub redirects to the newest release. No API call, so no
       # anonymous rate limit, and no web deploy to go stale.
+      #
+      # The asset names are read from the checksums file, not guessed at on
+      # disk. The first version of this step looked for `dist/brewkeg_0.3.0_
+      # darwin_arm64` and did not find it, because GoReleaser with
+      # `format: binary` uploads the raw binary under that name but leaves the
+      # FILE in the build directory — `dist/` only ever held the two Windows
+      # zips. So every macOS and Linux entry was silently dropped and every
+      # install fell through to the GitHub API, which is the rate limit this
+      # manifest exists to avoid. The checksums file is written from what was
+      # actually uploaded, so it cannot disagree with the release.
+      #
+      # A platform with no checksum entry now fails the job. The old step
+      # warned, the warning scrolled past in a green run, and the release
+      # shipped broken.
       - name: Publish install manifest
         working-directory: cli
         run: |
           set -euo pipefail
           version="${GITHUB_REF_NAME#v}"
+          sums="dist/brewkeg_${version}_checksums.txt"
           out="dist/latest.txt"
+          [ -f "$sums" ] || { echo "::error::no $sums — cannot name the assets"; exit 1; }
+
+          asset_for() {
+            # `*name` is the binary-mode spelling some checksum tools emit.
+            awk -v want="brewkeg_${version}_$1" \
+              '$2 == want || $2 == "*"want { print $2; exit }' "$sums"
+          }
+
           {
             echo "version=$version"
             echo "tag=$GITHUB_REF_NAME"
-            for pair in \
-              "darwin_amd64:brewkeg_${version}_darwin_amd64" \
-              "darwin_arm64:brewkeg_${version}_darwin_arm64" \
-              "linux_amd64:brewkeg_${version}_linux_amd64" \
-              "linux_arm64:brewkeg_${version}_linux_arm64" \
-              "windows_amd64:brewkeg_${version}_windows_amd64.zip" \
-              "windows_arm64:brewkeg_${version}_windows_arm64.zip"
+            for key in \
+              darwin_amd64 darwin_arm64 linux_amd64 linux_arm64 \
+              windows_amd64 windows_arm64
             do
-              key="${pair%%:*}"
-              name="${pair#*:}"
-              if [ -f "dist/$name" ]; then
-                echo "asset_$key=$name"
-              else
-                echo "::warning::manifest: missing dist/$name — installer will fall back for $key"
+              name=$(asset_for "$key")
+              # Windows ships a zip; the others are bare binaries.
+              [ -n "$name" ] || name=$(asset_for "$key.zip")
+              if [ -z "$name" ]; then
+                echo "::error::manifest: no brewkeg_${version}_${key} in $sums"
+                exit 1
               fi
+              echo "asset_$key=$name"
             done
           } > "$out"
           cat "$out"
