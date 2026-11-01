@@ -2,68 +2,117 @@ package main
 
 import (
 	"fmt"
+	"math"
 	"os"
 	"strings"
 )
 
-// The desktop app ships the real vendor artwork (icons/claude.png,
-// icons/openai.svg, icons/zcode.png) and a terminal cannot show a picture.
-// The CLI draws a single-width badge in the vendor's brand colour instead, so
-// the checklist reads as a list of products rather than a list of boxes.
+// The terminal cannot show the vendor's artwork. The desktop app ships the real
+// files (icons/claude.png, icons/openai.svg, icons/opencode.svg, icons/zcode.png)
+// and draws them; a checklist row here is one text cell wide.
 //
-// The vendor comes from the server: the spec names it (icon: "anthropic",
-// icon: "openai") and the CLI only decides how to spell it on a terminal. A
-// target the server has not named yet falls back to the first letter of its
-// label, so a new tool is never drawn as a nameless box.
+// So each row carries the vendor's MARK, in the vendor's colour, drawn with the
+// closest character that IS that shape — not the first letter of the product's
+// name. A circled initial (Ⓐ, Ⓞ, Ⓩ) is a monogram: it tells you which letter the
+// product starts with, which the label already does, and it is what made the
+// list look like a set of boxes rather than a set of products.
+//
+//   ✳  Claude's eight-ray starburst (U+2733), in Anthropic clay.
+//   ⬡  the hexagonal knot of OpenAI's mark (U+2B21), in OpenAI green.
+//   ▣  OpenCode's square-in-square (U+25A3) — its mark is literally this.
+//   Z  Z.ai's wordmark, which is the letter Z, in its near-black — or rather
+//      in the terminal's own ink, because a near-black mark on a dark terminal
+//      is invisible. See paints.
+//
+// A tool with no mark of its own gets no badge rather than an invented one, and
+// its label still lines up: the badge column is always one cell.
 
 type badge struct {
 	glyph string
 	hex   string // "rrggbb"; empty means the terminal's own foreground
 }
 
-// vendorBadges are the vendors whose brand colour is known. The colour is
-// the point: the badge is the vendor's, not ours.
+// vendorBadges is keyed by TARGET id first and vendor key second. The two are
+// not the same thing: OpenCode is an OpenAI-protocol client and the spec gives
+// it icon "openai", so keying on the vendor alone would draw Codex's mark next
+// to it. The id is what identifies the product; the vendor key is the fallback
+// for a tool the spec has not taught us yet.
 var vendorBadges = map[string]badge{
-	"anthropic": {glyph: "Ⓐ", hex: "D97757"}, // Anthropic clay
-	"openai":    {glyph: "Ⓞ", hex: "10A37F"}, // OpenAI green
+	// Products.
+	"claude-cli": {glyph: "✳", hex: "D97757"},
+	"desktop":    {glyph: "✳", hex: "D97757"},
+	"codex":      {glyph: "⬡", hex: "10A37F"},
+	"opencode":   {glyph: "▣", hex: "0F1115"},
+	"zcode":      {glyph: "Z", hex: "0F1115"},
+	// Vendor keys, for anything new the server names.
+	"anthropic": {glyph: "✳", hex: "D97757"},
+	"openai":    {glyph: "⬡", hex: "10A37F"},
 }
 
-// badgeFor picks the badge for a row. The spec's icon key wins; without one
-// the label's first letter is circled, so the row still carries the product's
-// own name.
-func badgeFor(iconKey, label string) badge {
-	if b, ok := vendorBadges[strings.ToLower(strings.TrimSpace(iconKey))]; ok {
-		return b
-	}
-	return badge{glyph: circledInitial(label)}
-}
-
-// circledInitial turns the first letter of a label into a circled capital.
-func circledInitial(label string) string {
-	for _, r := range strings.TrimSpace(label) {
-		switch {
-		case r >= 'A' && r <= 'Z':
-			return string(rune(0x24B6 + (r - 'A')))
-		case r >= 'a' && r <= 'z':
-			return string(rune(0x24D0 + (r - 'a')))
-		default:
-			return string(r)
+// badgeFor picks the mark for a row: the target's own id, then the vendor the
+// spec names, then nothing. Never a monogram — an invented mark is worse than a
+// blank column, because it claims to be the product's logo.
+func badgeFor(id, iconKey, label string) badge {
+	for _, key := range []string{id, iconKey} {
+		k := strings.ToLower(strings.TrimSpace(key))
+		if k == "" {
+			continue
+		}
+		if b, ok := vendorBadges[k]; ok {
+			return b
 		}
 	}
-	return "•"
+	// One cell, so the label column stays aligned.
+	_ = label
+	return badge{glyph: " "}
 }
 
 // render paints the badge in the vendor's colour. Colour is skipped when the
 // output is not a terminal, and NO_COLOR turns it off.
-func (b badge) render() string {
-	if b.hex == "" || !colorEnabled() {
+func (b badge) render() string { return b.renderOn(colorEnabled()) }
+
+func (b badge) renderOn(color bool) string {
+	if !color || !b.paints() {
 		return b.glyph
 	}
+	r, g, bl, _ := hexRGB(b.hex)
+	return fmt.Sprintf("\x1b[38;2;%d;%d;%dm%s\x1b[0m", r, g, bl, b.glyph)
+}
+
+// paints reports whether the vendor's colour is worth applying.
+//
+// Some vendors' marks are black: Z.ai's is near-black, and so is OpenCode's.
+// That is the right colour on paper, but a terminal is usually dark, and a
+// black mark on a dark background is not a dim mark — it is no mark at all.
+// The glyph was drawn and nobody could see it, which read as a missing icon.
+//
+// We cannot ask the terminal for its background, so the rule is the safe one:
+// a colour this dark is not applied, and the mark is drawn in the terminal's
+// own foreground. Nothing is lost — black-on-black was never carrying colour —
+// and the shape, which is what identifies the product, survives on both a dark
+// and a light theme.
+const minBadgeLuminance = 0.05
+
+func (b badge) paints() bool {
 	r, g, bl, ok := hexRGB(b.hex)
 	if !ok {
-		return b.glyph
+		return false
 	}
-	return fmt.Sprintf("\x1b[38;2;%d;%d;%dm%s\x1b[0m", r, g, bl, b.glyph)
+	return luminance(r, g, bl) >= minBadgeLuminance
+}
+
+// luminance is the WCAG relative luminance of an sRGB colour, 0 (black) to 1
+// (white). The sRGB curve is undone first, so the threshold is a real
+// perceptual one and not an average of three channel bytes.
+func luminance(r, g, bl int) float64 {
+	linear := func(c int) float64 {
+		v := float64(c) / 255
+		if v <= 0.03928 {
+			return v / 12.92
+		}
+		return math.Pow((v+0.055)/1.055, 2.4)
+	}
+	return 0.2126*linear(r) + 0.7152*linear(g) + 0.0722*linear(bl)
 }
 
 func hexRGB(hex string) (int, int, int, bool) {

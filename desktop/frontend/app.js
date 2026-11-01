@@ -32,6 +32,11 @@ const ICONS = {
   // /Applications/Claude.app. Desktop ships its own icon, so it gets its own.
   desktop: "icons/claude-app.png",
   codex: "icons/openai.svg",
+  // OpenCode's own mark, the square-in-square from simple-icons (the same
+  // path components/landing/harness-icons.tsx draws for the site). Without an
+  // entry the row leaves its icon column empty and the label sits flush left,
+  // which reads as a layout bug next to four rows that have one.
+  opencode: "icons/opencode.svg",
   zcode: "icons/zcode.png",
 };
 
@@ -49,6 +54,7 @@ const DEMO_STATE = {
   targets: [
     { id: "claude-cli", label: "Claude Code", installed: true, enabled: false, path: "~/.claude/settings.json" },
     { id: "codex", label: "Codex CLI", installed: true, enabled: true, path: "~/.codex/config.toml" },
+    { id: "opencode", label: "OpenCode", installed: true, enabled: true, path: "~/.config/opencode/opencode.json" },
     { id: "desktop", label: "Claude Desktop", installed: false, enabled: false, path: "in-app" },
     { id: "zcode", label: "ZCode", installed: true, enabled: true, path: "~/.zcode/v2/provider_config.json" },
   ],

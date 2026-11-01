@@ -30,7 +30,7 @@ func checklistItems(status []brewkeg.TargetStatus) []choice {
 		if s.Enabled {
 			hint = "found — already connected"
 		}
-		items = append(items, choice{label: s.Label, icon: s.Icon, checked: s.Enabled, hint: hint})
+		items = append(items, choice{label: s.Label, id: s.ID, icon: s.Icon, checked: s.Enabled, hint: hint})
 	}
 	return items
 }

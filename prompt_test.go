@@ -113,37 +113,102 @@ func TestLinePromptsAskForCanonicalMode(t *testing.T) {
 	}
 }
 
-// The vendor comes from the server (icon: "anthropic"), and the CLI only
-// decides how to spell it on a terminal. A target the server has not named
-// yet falls back to its own label, never to a nameless box.
-func TestBadgeForNamesTheVendor(t *testing.T) {
-	if got := badgeFor("anthropic", "Claude Code").glyph; got != "Ⓐ" {
-		t.Fatalf("anthropic badge is %q, want Ⓐ", got)
+// The row carries the vendor's mark, not a monogram. The id identifies the
+// product and wins over the vendor key the server sends: OpenCode speaks the
+// OpenAI protocol and carries icon "openai", so keying on the vendor alone
+// would draw Codex's mark next to it.
+func TestBadgeForDrawsTheVendorsMark(t *testing.T) {
+	if got := badgeFor("claude-cli", "anthropic", "Claude Code").glyph; got != "✳" {
+		t.Fatalf("claude-cli badge is %q, want ✳", got)
 	}
-	if got := badgeFor("openai", "Codex CLI").glyph; got != "Ⓞ" {
-		t.Fatalf("openai badge is %q, want Ⓞ", got)
+	if got := badgeFor("codex", "openai", "Codex CLI").glyph; got != "⬡" {
+		t.Fatalf("codex badge is %q, want ⬡", got)
 	}
-	if got := badgeFor("", "ZCode").glyph; got != "Ⓩ" {
-		t.Fatalf("a target with no icon key got %q, want the label's own initial Ⓩ", got)
+	if got := badgeFor("opencode", "openai", "OpenCode").glyph; got != "▣" {
+		t.Fatalf("opencode badge is %q, want ▣ — the id decides the mark, not the shared vendor key", got)
 	}
-	if got := badgeFor("", "Claude Code").glyph; got != "Ⓒ" {
-		t.Fatalf("a target with no icon key got %q, want the label's own initial Ⓒ", got)
+	if got := badgeFor("zcode", "", "ZCode").glyph; got != "Z" {
+		t.Fatalf("zcode badge is %q, want Z", got)
+	}
+	// A tool the spec has not taught us yet still gets its vendor's mark.
+	if got := badgeFor("something-new", "anthropic", "New Tool").glyph; got != "✳" {
+		t.Fatalf("an unknown id with vendor anthropic got %q, want ✳", got)
+	}
+}
+
+// No mark of its own means no badge. An invented monogram claims to be the
+// product's logo, which is worse than a blank column — but the column is still
+// one cell wide, so the labels below it stay aligned.
+func TestBadgeForInventsNothing(t *testing.T) {
+	for _, label := range []string{"ZCode", "Claude Code", ""} {
+		b := badgeFor("", "", label)
+		if b.glyph != " " {
+			t.Fatalf("an unnamed target with label %q got badge %q, want a single blank cell", label, b.glyph)
+		}
+		if b.hex != "" {
+			t.Fatalf("a blank badge carries colour %q", b.hex)
+		}
 	}
 }
 
 // The badge colour is the vendor's, and it is only painted when the output
 // is a terminal — a piped checklist must stay plain text.
 func TestBadgeColourIsTheVendorColour(t *testing.T) {
-	b := badgeFor("anthropic", "Claude Code")
+	b := badgeFor("claude-cli", "anthropic", "Claude Code")
 	if b.hex != "D97757" {
-		t.Fatalf("anthropic colour is %q, want D97757", b.hex)
+		t.Fatalf("claude-cli colour is %q, want D97757", b.hex)
 	}
 	r, g, bl, ok := hexRGB(b.hex)
 	if !ok || r != 0xD9 || g != 0x77 || bl != 0x57 {
 		t.Fatalf("D97757 parsed as %d,%d,%d (ok=%v)", r, g, bl, ok)
 	}
-	if got := badgeFor("openai", "Codex CLI").hex; got != "10A37F" {
+	if got := badgeFor("codex", "openai", "Codex CLI").hex; got != "10A37F" {
 		t.Fatalf("openai colour is %q, want 10A37F", got)
+	}
+	if got := badgeFor("opencode", "openai", "OpenCode").hex; got != "0F1115" {
+		t.Fatalf("opencode colour is %q, want 0F1115", got)
+	}
+}
+
+// A vendor whose colour is black would paint its mark black. On a dark
+// terminal that is not a dim badge, it is no badge: the glyph is drawn and
+// nobody sees it, which is what "the icons don't show" looked like. Such a
+// colour is dropped and the mark falls back to the terminal's own foreground,
+// so the shape still shows on a dark theme and on a light one.
+func TestBadgeKeepsADarkMarkVisible(t *testing.T) {
+	for _, id := range []string{"opencode", "zcode"} {
+		b := badgeFor(id, "", id)
+		if b.glyph == " " {
+			t.Fatalf("%s has no mark at all", id)
+		}
+		if b.paints() {
+			t.Fatalf("%s is painted %q: black on a dark terminal is invisible", id, b.hex)
+		}
+		if got := b.renderOn(true); got != b.glyph {
+			t.Fatalf("%s rendered %q with colour on, want the bare glyph %q", id, got, b.glyph)
+		}
+	}
+
+	// The colours that are actually a colour still get painted.
+	for _, id := range []string{"claude-cli", "codex"} {
+		if b := badgeFor(id, "", id); !b.paints() {
+			t.Fatalf("%s colour %q was dropped, want it painted", id, b.hex)
+		}
+	}
+
+	// Only the dark end is guarded: dark terminals are the common case, so a
+	// pale mark is left alone rather than guessed at.
+	white := badge{glyph: "Z", hex: "FFFFFF"}
+	if !white.paints() {
+		t.Fatal("white was dropped; only near-background colours should be")
+	}
+	nearBlack := badge{glyph: "Z", hex: "050505"}
+	if nearBlack.paints() {
+		t.Fatal("near-black was painted")
+	}
+	colourless := badge{glyph: "Z"}
+	if colourless.paints() {
+		t.Fatal("a badge with no colour claims to be painted")
 	}
 }
 

@@ -105,9 +105,13 @@ type choice struct {
 	label   string
 	checked bool
 	hint    string
+	// id is the target's own id ("claude-cli", "opencode"). The terminal picks
+	// the row's mark from it, because the vendor key is not unique per product:
+	// OpenCode speaks the OpenAI protocol and carries icon "openai", the same
+	// key Codex does.
+	id string
 	// icon is the vendor key the server sends with the target ("anthropic",
-	// "openai"). The terminal draws a badge from it; the desktop app draws
-	// the vendor's own artwork.
+	// "openai"), used when the id has no mark of its own.
 	icon string
 }
 
@@ -123,7 +127,7 @@ func multiSelect(title string, items []choice) []int {
 func multiSelectPlain(title string, items []choice) []int {
 	fmt.Println(title)
 	for i, c := range items {
-		fmt.Printf("  %d) %s %s\n", i+1, badgeFor(c.icon, c.label).render(), c.label)
+		fmt.Printf("  %d) %s %s\n", i+1, badgeFor(c.id, c.icon, c.label).render(), c.label)
 	}
 	fmt.Print("Select (comma-separated numbers, or 'all'): ")
 	line, _ := stdin.ReadString('\n')
@@ -276,7 +280,7 @@ func multiSelectRaw(title string, items []choice) []int {
 			if c.hint != "" {
 				suffix = "  (" + c.hint + ")"
 			}
-			fmt.Printf(" %s %s %s %s%s\n", cur, mark, badgeFor(c.icon, c.label).render(), c.label, suffix)
+			fmt.Printf(" %s %s %s %s%s\n", cur, mark, badgeFor(c.id, c.icon, c.label).render(), c.label, suffix)
 		}
 		fmt.Print(" ")
 

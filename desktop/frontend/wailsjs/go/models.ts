@@ -130,6 +130,7 @@ export namespace brewkeg {
 	    rootKeys?: KVSpec[];
 	    jsonFileKeys?: string[];
 	    zcodeProvider?: string;
+	    opencodeProvider?: string;
 	    neverDetectable?: boolean;
 	
 	    static createFrom(source: any = {}) {
@@ -146,6 +147,7 @@ export namespace brewkeg {
 	        this.rootKeys = this.convertValues(source["rootKeys"], KVSpec);
 	        this.jsonFileKeys = source["jsonFileKeys"];
 	        this.zcodeProvider = source["zcodeProvider"];
+	        this.opencodeProvider = source["opencodeProvider"];
 	        this.neverDetectable = source["neverDetectable"];
 	    }
 	
@@ -244,57 +246,6 @@ export namespace brewkeg {
 	        this.lines = source["lines"];
 	    }
 	}
-	export class PickerOption {
-	    model: string;
-	    label?: string;
-	    description?: string;
-	
-	    static createFrom(source: any = {}) {
-	        return new PickerOption(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.model = source["model"];
-	        this.label = source["label"];
-	        this.description = source["description"];
-	    }
-	}
-	export class ModelPickerSpec {
-	    path: string;
-	    replace: boolean;
-	    options: PickerOption[];
-	
-	    static createFrom(source: any = {}) {
-	        return new ModelPickerSpec(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.path = source["path"];
-	        this.replace = source["replace"];
-	        this.options = this.convertValues(source["options"], PickerOption);
-	    }
-	
-		convertValues(a: any, classs: any, asMap: boolean = false): any {
-		    if (!a) {
-		        return a;
-		    }
-		    if (a.slice && a.map) {
-		        return (a as any[]).map(elem => this.convertValues(elem, classs));
-		    } else if ("object" === typeof a) {
-		        if (asMap) {
-		            for (const key of Object.keys(a)) {
-		                a[key] = new classs(a[key]);
-		            }
-		            return a;
-		        }
-		        return new classs(a);
-		    }
-		    return a;
-		}
-	}
-	
 	export class RelaunchApp {
 	    bundleId?: string;
 	    name: string;
@@ -352,6 +303,7 @@ export namespace brewkeg {
 	    manual?: string;
 	    manualSteps?: ManualStep[];
 	    restartApps?: RelaunchApp[];
+	    models?: string[];
 	
 	    static createFrom(source: any = {}) {
 	        return new TargetSpec(source);
@@ -369,6 +321,7 @@ export namespace brewkeg {
 	        this.manual = source["manual"];
 	        this.manualSteps = this.convertValues(source["manualSteps"], ManualStep);
 	        this.restartApps = this.convertValues(source["restartApps"], RelaunchApp);
+	        this.models = source["models"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
@@ -392,7 +345,6 @@ export namespace brewkeg {
 	export class Spec {
 	    version: number;
 	    targets: TargetSpec[];
-	    pickers?: Record<string, ModelPickerSpec>;
 	
 	    static createFrom(source: any = {}) {
 	        return new Spec(source);
@@ -402,7 +354,6 @@ export namespace brewkeg {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.version = source["version"];
 	        this.targets = this.convertValues(source["targets"], TargetSpec);
-	        this.pickers = this.convertValues(source["pickers"], ModelPickerSpec, true);
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
