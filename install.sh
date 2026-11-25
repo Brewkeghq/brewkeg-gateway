@@ -32,7 +32,7 @@ die() { printf 'error: %s\n' "$*" >&2; exit 1; }
 # connection produces. It does not cover 404 — the app archive is attached by a
 # job that runs after this one, so a 404 there must stay a fast, quiet "not yet".
 fetch()    { curl -fsSL --connect-timeout 10 --max-time 60  --retry 2 --retry-delay 1 "$@"; }
-download() { curl -fsSL --connect-timeout 10 --max-time 300 --retry 2 --retry-delay 1 "$@"; }
+download() { curl -fsSL --connect-timeout 10 --max-time 300 --retry 3 --retry-delay 1 --retry-all-errors -C - --speed-limit 1024 --speed-time 30 "$@"; }
 
 want_cli=1
 want_app=1

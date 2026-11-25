@@ -11,44 +11,44 @@
    competing with the accent by using it at full bleed. */
 
 @font-face {
-  font-family: "Geist";
-  src: url("fonts/geist-variable.woff2") format("woff2");
+  font-family: "Brewkeg Sans";
+  src: url("fonts/BrewkegSans_Roman_Web-s.p.1e3n6bt4oqimz.woff2") format("woff2");
   font-weight: 100 900;
   font-display: swap;
 }
 @font-face {
-  font-family: "Geist Mono";
-  src: url("fonts/geist-mono-variable.woff2") format("woff2");
+  font-family: "Brewkeg Mono";
+  src: url("fonts/BrewkegMono_Roman_Web-s.p.16xhthj2n-pap.woff2") format("woff2");
   font-weight: 100 900;
   font-display: swap;
 }
 @font-face {
-  font-family: "Instrument Serif";
-  src: url("fonts/instrument-serif-italic.ttf") format("truetype");
+  font-family: "Brewkeg Serif";
+  src: url("fonts/BrewkegSerif_Italic_Web-s.p.1fjksu1uimpf3.woff2") format("woff2");
   font-style: italic;
   font-weight: 400;
   font-display: swap;
 }
 
 :root {
-  --ink: #0f1115;
-  --paper: #ffffff;
-  --muted: #f9fafb;
-  --muted-foreground: #6b7280;
+  --ink: #1C1B19;
+  --paper: #F6F3EB;
+  --muted: #EDE8DC;
+  --muted-foreground: #6B6560;
   --faint: #b0b7c0;
-  --accent: #bef264;
-  --accent-deep: #a8e04a;
-  --accent-wash: rgba(190, 242, 100, 0.22);
+  --accent: #C2703E;
+  --accent-deep: #A85A32;
+  --accent-wash: rgba(194, 112, 62, 0.18);
   /* Was referenced by .update and .stamp but never defined, so both rendered
      with no text colour at all. */
-  --accent-foreground: #0f1115;
-  --border: #e5e7eb;
+  --accent-foreground: #FFFEFB;
+  --border: #E2DCCB;
   --destructive: #ef4444;
   --radius: 0.5rem;
 
-  --sans: "Geist", -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
-  --mono: "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
-  --serif: "Instrument Serif", Georgia, serif;
+  --sans: "Brewkeg Sans", -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  --mono: "Brewkeg Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --serif: "Brewkeg Serif", Georgia, serif;
 
   /* One duration, one easing. Mixed timings are what make an interface feel
      assembled rather than designed. */
@@ -169,7 +169,7 @@ h1 {
   transition: border-color var(--t) var(--ease), box-shadow var(--t) var(--ease);
 }
 .field input::placeholder { color: var(--faint); }
-.field input:hover { border-color: #d4d8dd; }
+.field input:hover { border-color: #C9BFB0; }
 /* Lime owns focus. It is the app saying "you are here". */
 .field input:focus-visible {
   outline: none;
@@ -192,7 +192,7 @@ button { font-family: var(--sans); font-size: 13px; cursor: pointer; }
   transition: background var(--t) var(--ease), border-color var(--t) var(--ease),
     transform var(--t) var(--ease);
 }
-.btn-quiet:hover { background: var(--muted); border-color: #d4d8dd; }
+.btn-quiet:hover { background: var(--muted); border-color: #C9BFB0; }
 .btn-quiet:active { transform: translateY(0.5px); }
 .btn-quiet:disabled { color: var(--faint); cursor: default; background: var(--paper); }
 
@@ -401,7 +401,7 @@ body.busy .switch { transition: none; }
   padding: 11px 12px;
   border: 1px solid var(--accent);
   border-radius: var(--radius);
-  background: rgba(190, 242, 100, 0.09);
+  background: rgba(194, 112, 62, 0.08);
 }
 .restart-title {
   margin: 0 0 7px;
